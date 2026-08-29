@@ -1,0 +1,2348 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>THUNDER ACE — 爽快戰機射擊</title>
+<style>
+  :root{
+    --bg:#050817;
+    --panel:rgba(8,17,40,.76);
+    --line:rgba(111,219,255,.36);
+    --cyan:#66e8ff;
+    --blue:#4b78ff;
+    --violet:#a78bfa;
+    --gold:#ffd56a;
+    --danger:#ff637f;
+    --ok:#71ffb0;
+    --text:#eaf7ff;
+    --muted:#8fa8c5;
+  }
+  *{box-sizing:border-box}
+  html,body{
+    width:100%;height:100%;margin:0;overflow:hidden;background:
+      radial-gradient(circle at 50% 20%, #10265a 0%, #070d23 36%, #02040d 100%);
+    color:var(--text);font-family:"Segoe UI","Noto Sans TC",Arial,sans-serif;
+    user-select:none;
+  }
+  #app{position:relative;width:100vw;height:100vh;display:grid;place-items:center}
+  #frame{
+    position:relative;width:min(100vw,177.777vh);height:min(100vh,56.25vw);
+    overflow:hidden;background:#030713;box-shadow:0 0 90px rgba(46,114,255,.2);
+  }
+  canvas{width:100%;height:100%;display:block;background:#02050f}
+  #hud{position:absolute;inset:0;pointer-events:none}
+  .topbar{
+    position:absolute;left:34px;right:34px;top:26px;height:86px;
+    display:grid;grid-template-columns:420px 1fr 420px;gap:22px;align-items:start;
+  }
+  .glass{
+    background:linear-gradient(180deg,rgba(9,23,52,.88),rgba(5,12,31,.68));
+    border:1px solid rgba(117,222,255,.28);border-radius:18px;
+    box-shadow:inset 0 1px rgba(255,255,255,.07),0 10px 30px rgba(0,0,0,.24);
+    backdrop-filter:blur(8px);
+  }
+  .playerBox,.scoreBox{padding:14px 18px;height:86px}
+  .playerHead,.scoreHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .tag{font-size:15px;font-weight:800;letter-spacing:.16em;color:var(--cyan)}
+  .small{font-size:14px;color:var(--muted)}
+  .bar{height:14px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}
+  .fill{height:100%;width:0%;transition:width .08s linear}
+  .lifeRow{display:flex;align-items:center;gap:12px;min-height:24px}
+  #hpIcons{display:flex;gap:7px;align-items:center;height:23px}
+  #shieldBadge{
+    height:24px;min-width:84px;padding:2px 9px;border-radius:8px;
+    display:flex;align-items:center;justify-content:center;gap:5px;
+    border:1px solid rgba(115,205,226,.16);background:rgba(56,122,152,.08);
+    color:#6f879b;font-size:11px;font-weight:900;letter-spacing:.08em;
+    opacity:.35;transition:.16s opacity,.16s border-color,.16s background;
+  }
+  #shieldBadge.active{
+    opacity:1;color:#bfeef4;border-color:rgba(108,206,222,.48);
+    background:rgba(61,151,174,.15);
+  }
+  .hpIcon{
+    position:relative;width:30px;height:20px;flex:0 0 auto;
+    opacity:.20;filter:saturate(.25);transition:opacity .16s,filter .16s,transform .16s;
+  }
+  .hpIcon::before{
+    content:"";position:absolute;left:50%;top:0;transform:translateX(-50%);
+    width:12px;height:19px;
+    background:linear-gradient(180deg,#dffcff,#64cfe8 68%,#2d6e99);
+    clip-path:polygon(50% 0,72% 38%,100% 92%,62% 72%,50% 100%,38% 72%,0 92%,28% 38%);
+    border-radius:2px;
+  }
+  .hpIcon::after{
+    content:"";position:absolute;left:50%;bottom:1px;transform:translateX(-50%);
+    width:5px;height:7px;border-radius:50%;
+    background:#78ddef;box-shadow:0 0 6px rgba(93,210,235,.28);
+  }
+  .hpIcon.on{opacity:.95;filter:none}
+  .hpIcon.on::before{box-shadow:0 0 8px rgba(94,214,235,.18)}
+  .hpIcon.lost{opacity:.12;filter:grayscale(1)}
+  #xpFill{background:linear-gradient(90deg,#5d7cff,#74e8ff);box-shadow:0 0 15px rgba(90,189,255,.55)}
+  #ultFill{
+    background:linear-gradient(90deg,#5a4fc4,#4d9ed0,#8fc7d2);
+    box-shadow:0 0 8px rgba(92,184,220,.28)
+  }
+  .centerInfo{height:82px;display:flex;gap:14px;justify-content:center;align-items:flex-start}
+  .pill{padding:12px 20px;min-width:150px;text-align:center}
+  .pill b{display:block;font-size:24px;line-height:1.1}
+  .pill span{font-size:12px;color:var(--muted);letter-spacing:.12em}
+  .scoreBox{text-align:right}
+  .scoreBox strong{font-size:28px;letter-spacing:.04em}
+  #xpWrap{position:absolute;left:34px;top:120px;width:420px;padding:10px 14px}
+  #xpText,#ultText{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  #ultWrap{
+    position:absolute;left:34px;top:174px;width:420px;padding:9px 14px;
+    transform:none;
+  }
+  #ultWrap .bar{height:10px}
+  #ultWrap.ready{
+    animation:pulseSoft 1.2s infinite alternate;
+    border-color:rgba(150,220,255,.46);
+    box-shadow:0 0 16px rgba(95,185,255,.10),inset 0 0 12px rgba(122,205,255,.05)
+  }
+  @keyframes pulseSoft{to{filter:brightness(1.10)}}
+  #bossWrap{
+    position:absolute;left:50%;transform:translateX(-50%);top:122px;width:720px;padding:12px 16px;
+    opacity:0;transition:opacity .2s
+  }
+  #bossWrap.show{opacity:1}
+  #bossFill{background:linear-gradient(90deg,#ff517c,#ffb45b);box-shadow:0 0 18px rgba(255,92,115,.55)}
+  #bossHead{display:flex;justify-content:space-between;font-weight:800;margin-bottom:7px}
+  #combo{
+    position:absolute;right:38px;bottom:44px;text-align:right;text-shadow:0 2px 16px #000;
+    opacity:.0;transition:opacity .2s
+  }
+  #combo.show{opacity:1}
+  #combo .n{font-size:56px;font-weight:900;font-style:italic;color:#fff}
+  #combo .c{font-size:16px;color:var(--gold);font-weight:800;letter-spacing:.16em}
+  #message{
+    position:absolute;left:50%;top:31%;transform:translate(-50%,-50%);
+    font-weight:1000;font-style:italic;text-align:center;
+    text-shadow:0 0 22px rgba(91,214,255,.8),0 5px 16px #000;
+    opacity:0;transition:opacity .15s,transform .15s;
+  }
+  #message.show{opacity:1;transform:translate(-50%,-50%) scale(1.04)}
+  #message .big{font-size:72px;letter-spacing:.05em}
+  #message .sub{font-size:22px;color:#bcefff;margin-top:6px}
+  #waveInfo{
+    position:absolute;left:38px;bottom:38px;padding:12px 16px;min-width:250px;
+    font-size:14px;color:#a8bdd6
+  }
+  #waveInfo b{font-size:17px;color:#f4fbff}
+  .overlay{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:
+      radial-gradient(circle at 50% 34%,rgba(29,70,154,.45),rgba(2,5,15,.88) 58%),
+      linear-gradient(rgba(4,8,20,.58),rgba(2,4,12,.9));
+    z-index:10;
+  }
+  .overlay.hidden{display:none}
+  .panel{
+    width:880px;padding:48px 54px 42px;border-radius:30px;
+    background:linear-gradient(180deg,rgba(8,19,48,.94),rgba(4,9,25,.94));
+    border:1px solid rgba(105,221,255,.35);
+    box-shadow:0 28px 100px rgba(0,0,0,.55),inset 0 1px rgba(255,255,255,.08);
+    text-align:center;
+  }
+  .logo{font-size:74px;font-weight:1000;font-style:italic;letter-spacing:.04em;margin:0}
+  .logo .th{color:#e9fbff;text-shadow:0 0 25px rgba(84,216,255,.75)}
+  .logo .ace{color:#73cfff;text-shadow:0 0 25px rgba(87,105,255,.7)}
+  .subtitle{margin-top:5px;color:#9ec0db;letter-spacing:.28em;font-size:16px}
+  .featureGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:32px 0 28px}
+  .feature{padding:16px 14px;border:1px solid rgba(116,209,255,.16);border-radius:16px;background:rgba(255,255,255,.025)}
+  .feature b{display:block;color:#dff7ff;font-size:17px;margin-bottom:5px}
+  .feature span{font-size:13px;color:#88a5c5;line-height:1.5}
+  .controls{display:flex;justify-content:center;gap:22px;flex-wrap:wrap;font-size:14px;color:#9eb6cf;margin-bottom:26px}
+  kbd{
+    display:inline-block;min-width:32px;padding:5px 9px;margin-right:6px;border-radius:8px;
+    border:1px solid rgba(166,226,255,.34);background:#0d1832;color:#eaffff;
+    box-shadow:inset 0 -2px rgba(0,0,0,.3);font-family:inherit;font-weight:800
+  }
+  button{
+    pointer-events:auto;cursor:pointer;border:0;border-radius:14px;padding:14px 34px;
+    font:800 18px inherit;color:#03111d;background:linear-gradient(90deg,#70eaff,#79a8ff);
+    box-shadow:0 12px 35px rgba(71,183,255,.28);transition:.15s transform,.15s filter
+  }
+  button:hover{transform:translateY(-2px);filter:brightness(1.1)}
+  button.secondary{color:#d9efff;background:#13213e;border:1px solid rgba(111,213,255,.25);box-shadow:none}
+  #pauseOverlay .panel,#gameOver .panel{width:620px}
+  #upgradeOverlay{z-index:20;background:radial-gradient(circle at 50% 42%,rgba(31,86,174,.34),rgba(2,5,15,.91) 62%)}
+  #upgradeOverlay .panel{width:1180px;padding:34px 40px 38px}
+  #upgradeCards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:24px}
+  #upgradeCards.two{grid-template-columns:repeat(2,1fr);max-width:790px;margin-left:auto;margin-right:auto}
+  .upgradeCard{
+    pointer-events:auto;position:relative;min-height:255px;padding:24px 22px 20px;
+    border-radius:22px;border:1px solid rgba(109,219,255,.25);
+    background:linear-gradient(180deg,rgba(15,34,72,.96),rgba(7,15,36,.96));
+    text-align:left;cursor:pointer;transition:.16s transform,.16s border-color,.16s filter;
+    box-shadow:inset 0 1px rgba(255,255,255,.07),0 16px 40px rgba(0,0,0,.28);
+  }
+  .upgradeCard:hover{transform:translateY(-6px);filter:brightness(1.12);border-color:rgba(117,230,255,.7)}
+  .upgradeKey{
+    position:absolute;right:16px;top:15px;width:34px;height:34px;border-radius:10px;
+    display:grid;place-items:center;background:#10264a;border:1px solid rgba(130,225,255,.3);
+    color:#dffaff;font-weight:900
+  }
+  .upgradeIcon{font-size:38px;filter:drop-shadow(0 0 12px rgba(102,224,255,.34));margin-bottom:10px}
+  .upgradeName{font-size:24px;font-weight:900;color:#effcff}
+  .upgradeLevel{margin-top:4px;color:#6fe8ff;font-size:13px;font-weight:800;letter-spacing:.08em}
+  .upgradeDesc{margin-top:15px;color:#a8bdd5;font-size:15px;line-height:1.65}
+  .upgradeMax{margin-top:14px;color:#ffda7a;font-size:13px;font-weight:800}
+  #buildBox{
+    position:absolute;right:34px;top:170px;width:300px;padding:12px 14px;
+    font-size:12px;line-height:1.7;color:#91abc7;max-height:205px;overflow:hidden
+  }
+  #buildBox b{color:#dff7ff;letter-spacing:.08em}
+  #buildList{margin-top:4px;color:#a7c4dc}
+  .result{font-size:18px;color:#aac2da;line-height:1.9;margin:20px 0 28px}
+  .result b{color:#fff}
+  #soundBtn{
+    position:absolute;right:34px;top:122px;z-index:4;pointer-events:auto;
+    padding:8px 12px;font-size:13px;border-radius:10px;background:rgba(7,17,38,.72);color:#c9eafa;
+    border:1px solid rgba(115,214,255,.22);box-shadow:none;
+  }
+  .warn{color:#ffd46d}
+  @media(max-width:900px){
+    .topbar{left:12px;right:12px;top:10px;grid-template-columns:1fr 1fr}
+    .centerInfo{display:none}
+    .playerBox,.scoreBox{height:70px;padding:9px 12px}
+    #xpWrap{left:12px;top:88px;width:300px}
+    #bossWrap{top:92px;width:50%}
+    #ultWrap{left:12px;top:136px;width:300px;bottom:auto}
+    #waveInfo{left:12px;bottom:12px}
+    #combo{right:14px;bottom:18px}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="frame">
+    <canvas id="game" width="1920" height="1080"></canvas>
+
+    <div id="hud">
+      <div class="topbar">
+        <div class="glass playerBox">
+          <div class="playerHead">
+            <div><span class="tag">THUNDER-01</span> <span id="levelText" class="small">LV.1</span></div>
+            <span id="hpText" class="small">LIFE ×5</span>
+          </div>
+          <div class="lifeRow">
+            <div id="hpIcons" aria-label="生命值"></div>
+            <div id="shieldBadge" aria-label="防護罩未啟動">⬡ SHIELD</div>
+          </div>
+        </div>
+
+        <div class="centerInfo">
+          <div class="glass pill"><span>STAGE</span><b id="stageText">01</b></div>
+          <div class="glass pill"><span>HOSTILES</span><b id="enemyText">0</b></div>
+          <div class="glass pill"><span>POWER</span><b id="powerText">1.0×</b></div>
+        </div>
+
+        <div class="glass scoreBox">
+          <div class="scoreHead"><span class="small">SCORE</span><span class="tag">ACE RANK</span></div>
+          <strong id="scoreText">00000000</strong>
+        </div>
+      </div>
+
+      <div id="xpWrap" class="glass">
+        <div id="xpText"><span class="tag">EXPERIENCE</span><span class="small">0 / 100</span></div>
+        <div class="bar"><div class="fill" id="xpFill"></div></div>
+      </div>
+
+      <div id="bossWrap" class="glass">
+        <div id="bossHead"><span id="bossName">BOSS</span><span id="bossHpText">100%</span></div>
+        <div class="bar"><div class="fill" id="bossFill"></div></div>
+      </div>
+
+      <div id="ultWrap" class="glass">
+        <div id="ultText"><span class="tag">⚡ THUNDER — R</span><span class="small">0%</span></div>
+        <div class="bar"><div class="fill" id="ultFill"></div></div>
+      </div>
+
+      <div id="combo"><div class="n" id="comboN">x0</div><div class="c">DESTRUCTION CHAIN</div></div>
+      <div id="message"><div class="big" id="msgBig"></div><div class="sub" id="msgSub"></div></div>
+      <div id="waveInfo" class="glass"><b id="objectiveText">擊墜敵機</b><br><span id="detailText">戰機會自動射擊 · 敵彈可被摧毀</span></div>
+      <div id="buildBox" class="glass"><b>BUILD / 強化配置</b><div id="buildList">尚未取得強化</div></div>
+      <button id="soundBtn">SOUND: ON</button>
+    </div>
+
+    <div id="startScreen" class="overlay">
+      <div class="panel">
+        <h1 class="logo"><span class="th">THUNDER</span> <span class="ace">ACE</span></h1>
+        <div class="subtitle">2D OVERDRIVE SHOOTER</div>
+
+        <div class="featureGrid">
+          <div class="feature"><b>四型基地戰</b><span>每關基地輪替不同結構；拆掉前緣弱點後，真正的大型戰鬥機會脫離基地決戰。</span></div>
+          <div class="feature"><b>多層火力 BUILD</b><span>可抽追擊子艦、單層護盾與 360° 自動副砲；LV11 起每次三選一。</span></div>
+          <div class="feature"><b>25 關後開殺</b><span>前 25 關主打割草爽感，第 26 關起敵人速度、密度與彈幕全面提升。</span></div>
+        </div>
+
+        <div class="controls">
+          <span><kbd>WASD</kbd>/<kbd>方向鍵</kbd>移動</span>
+          <span><kbd>SHIFT</kbd>精密移動</span>
+          <span><kbd>R</kbd>全屏雷電</span>
+          <span><kbd>P</kbd>暫停</span>
+        </div>
+
+        <button id="startBtn">開始出擊</button>
+      </div>
+    </div>
+
+    <div id="upgradeOverlay" class="overlay hidden">
+      <div class="panel">
+        <div class="subtitle">LEVEL UP / SELECT UPGRADE</div>
+        <h2 id="upgradeTitle" style="font-size:46px;margin:7px 0 0">選擇一項強化</h2>
+        <div id="upgradeHint" style="color:#91abc6;margin-top:7px">按 1 / 2 選擇</div>
+        <div id="upgradeCards"></div>
+      </div>
+    </div>
+
+    <div id="pauseOverlay" class="overlay hidden">
+      <div class="panel">
+        <h2 style="font-size:48px;margin:0 0 8px">PAUSED</h2>
+        <div class="subtitle">戰鬥暫停</div>
+        <div style="margin-top:26px"><button id="resumeBtn">繼續戰鬥</button></div>
+      </div>
+    </div>
+
+    <div id="gameOver" class="overlay hidden">
+      <div class="panel">
+        <h2 style="font-size:52px;margin:0">MISSION FAILED</h2>
+        <div class="result" id="resultText"></div>
+        <button id="retryBtn">重新出擊</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+const W = 1920, H = 1080;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = true;
+
+const $ = id => document.getElementById(id);
+const ui = {
+  start:$('startScreen'), pause:$('pauseOverlay'), over:$('gameOver'),
+  hpIcons:$('hpIcons'), hpText:$('hpText'), shieldBadge:$('shieldBadge'), xpFill:$('xpFill'), xpText:$('xpText'),
+  ultFill:$('ultFill'), ultText:$('ultText'), ultWrap:$('ultWrap'),
+  stage:$('stageText'), enemies:$('enemyText'), power:$('powerText'),
+  level:$('levelText'), score:$('scoreText'), boss:$('bossWrap'), bossFill:$('bossFill'),
+  bossName:$('bossName'), bossHp:$('bossHpText'), combo:$('combo'), comboN:$('comboN'),
+  msg:$('message'), msgBig:$('msgBig'), msgSub:$('msgSub'),
+  objective:$('objectiveText'), detail:$('detailText'), sound:$('soundBtn'),
+  result:$('resultText'), upgrade:$('upgradeOverlay'), upgradeCards:$('upgradeCards'),
+  upgradeTitle:$('upgradeTitle'), upgradeHint:$('upgradeHint'),
+  buildList:$('buildList')
+};
+
+const keys = new Set();
+let audioEnabled = true;
+let audioCtx = null;
+
+function initAudio(){
+  if (!audioEnabled) return;
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function tone(freq=440, dur=.05, type='sine', vol=.025, slide=0){
+  if (!audioEnabled) return;
+  initAudio();
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq,t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40,freq+slide),t+dur);
+  g.gain.setValueAtTime(vol,t);
+  g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t); o.stop(t+dur);
+}
+function sfx(name){
+  if (!audioEnabled) return;
+  if(name==='shoot') tone(640,.025,'square',.006,-240);
+  if(name==='hit') tone(180,.035,'square',.012,-80);
+  if(name==='kill'){ tone(110,.08,'sawtooth',.02,-45); setTimeout(()=>tone(260,.04,'square',.012,120),20); }
+  if(name==='level'){ tone(520,.11,'sine',.04,420); setTimeout(()=>tone(780,.14,'sine',.035,520),80); }
+  if(name==='boss') tone(85,.35,'sawtooth',.05,-25);
+  if(name==='ult'){ tone(70,.4,'sawtooth',.05,260); setTimeout(()=>tone(880,.5,'square',.025,-540),80); }
+  if(name==='hurt') tone(90,.18,'square',.04,-25);
+}
+
+const rand=(a,b)=>a+Math.random()*(b-a);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const dist2=(a,b)=>{const dx=a.x-b.x,dy=a.y-b.y;return dx*dx+dy*dy};
+const circleHit=(a,b,pad=0)=>dist2(a,b) < (a.r+b.r+pad)*(a.r+b.r+pad);
+
+let game, player, bullets, enemies, enemyBullets, particles, pickups, lightning, stars, boss, last=0;
+
+function resetGame(){
+  game = {
+    running:false, paused:false, over:false, score:0, stage:1,
+    kills:0, stageKills:0, quota:18, spawnTimer:0, stageState:'wave',
+    bossDelay:0, transition:0, transitionAge:0, shake:0, flash:0, time:0,
+    combo:0, comboTimer:0, maxCombo:0, destroyedBullets:0,
+    upgrading:false, pendingUpgrades:0, currentChoices:[], deferredUpgradeTimer:0
+  };
+  player = {
+    x:W/2, y:H-160, r:30, hp:5, maxHp:5, speed:640,
+    level:1, xp:0, xpNeed:100, ult:0, ultMax:100,
+    fireCd:0, bombCd:0, subCd:0, inv:0, trail:[], hitPulse:0,
+    droneUnits:[],
+    upgrades:{
+      damage:0, spread:0, pierce:0, drones:0, armor:0, speed:0,
+      radar:0, explosive:0, fireRate:0,
+      shield:0, subgun:0, subDamage:0, subRate:0,
+      exp:0, ultGain:0
+    }
+  };
+  bullets=[]; enemies=[]; enemyBullets=[]; particles=[]; pickups=[]; lightning=[]; boss=null;
+  stars = Array.from({length:160},()=>({
+    x:rand(0,W), y:rand(0,H), z:rand(.2,1), s:rand(.8,2.5)
+  }));
+  setupStage(1, true);
+  updateUI();
+}
+
+function setupStage(n, silent=false){
+  game.stage=n;
+  game.stageKills=0;
+  game.quota = Math.floor(14 + n*3.1 + Math.min(player.level*1.2,24));
+  game.stageState='wave';
+  game.spawnTimer=.7;
+  game.transition=0;
+  game.transitionAge=0;
+  game.deferredUpgradeTimer=game.pendingUpgrades>0?.45:0;
+  boss=null;
+  game.upgrading=false;
+  ui.upgrade.classList.add('hidden');
+  enemies.length=0;
+  enemyBullets.length=0;
+  bullets.length=0;
+  pickups.length=0;
+  lightning.length=0;
+  ui.boss.classList.remove('show');
+  if(!silent) announce(`STAGE ${String(n).padStart(2,'0')}`, n<=25 ? '火力全開 · 持續壓制' : 'OVERDRIVE ZONE · 威脅急升', 1500);
+}
+
+function announce(big,sub='',ms=1200){
+  ui.msgBig.textContent=big; ui.msgSub.textContent=sub; ui.msg.classList.add('show');
+  clearTimeout(announce.t);
+  announce.t=setTimeout(()=>ui.msg.classList.remove('show'),ms);
+}
+
+function stageDifficulty(){
+  const s=game.stage;
+  if(s<=25) return {
+    enemySpeed: 110+s*4.3,
+    bulletSpeed: 185+s*3.2,
+    fireRate: Math.max(1.7,3.1-s*.045),
+    maxEnemies: 5+Math.floor(s/3)+Math.floor(player.level/4),
+    bulletHp:1,
+    dmg:5
+  };
+  const o=s-25;
+  return {
+    enemySpeed: 230+o*10,
+    bulletSpeed: 300+o*13,
+    fireRate: Math.max(.48,1.45-o*.045),
+    maxEnemies: Math.min(30,14+Math.floor(o*.75)+Math.floor(player.level/4)),
+    bulletHp: 1+Math.floor(o/8),
+    dmg:7+Math.floor(o/6)
+  };
+}
+
+const UPGRADE_DEFS = {
+  damage:{name:'強化子彈',icon:'✦',max:10,desc:'提高主砲傷害。LV10 進化為高能雷射，獲得額外威力與穿透。'},
+  spread:{name:'強化射程',icon:'⌁',max:5,desc:'將射界擴張為散彈。最高 LV5；每級明顯增加彈道數，LV5 達到最大廣角火力。'},
+  pierce:{name:'穿透子彈',icon:'➶',max:10,desc:'子彈擊中目標後不會立刻消失，可連續貫穿更多敵機。'},
+  drones:{name:'子艦護航',icon:'◇',max:5,desc:'新增護航子艦繞行母艦，自動同步目前的彈種、傷害與特殊效果射擊。'},
+  armor:{name:'裝甲強化',icon:'⬡',max:5,desc:'生命格上限 +1，並立即補回 1 格。最高可由 5 格強化到 10 格。'},
+  speed:{name:'移動速度強化',icon:'»',max:5,desc:'提升戰機移動速度，閃避與切入火線都更靈活。'},
+  radar:{name:'雷達強化',icon:'⌖',max:1,desc:'顯示尚未進入畫面的敵機方位箭頭，可提早對準來襲位置。'},
+  explosive:{name:'爆裂彈',icon:'✹',max:1,desc:'主砲射擊時週期性追加爆裂彈，命中會炸傷範圍內敵人並清除敵彈。'},
+  fireRate:{name:'射速強化',icon:'≋',max:10,desc:'縮短主砲射擊間隔。高等級時火力會接近連續彈幕。'},
+  shield:{name:'防護罩',icon:'⬡',max:1,desc:'獲得 1 層防護罩。下一次受到攻擊時完全抵銷傷害並自動消失；同時最多只能存在 1 層。'},
+  subgun:{name:'新增副砲',icon:'◉',max:1,desc:'解鎖自動副砲。射速慢、傷害較低，但能 360° 自動瞄準敵人，包含後方與 180° 方向。'},
+  subDamage:{name:'副砲強化',icon:'✣',max:3,desc:'提高副砲單發傷害。最高 LV3；只有解鎖副砲後才會出現在升級選項。'},
+  subRate:{name:'副砲射速強化',icon:'»',max:5,desc:'縮短副砲射擊間隔。最高 LV5；只有解鎖副砲後才會出現在升級選項。'},
+  repair:{name:'裝甲修復',icon:'✚',max:0,desc:'立即完全恢復所有 HP。沒有等級，可重複抽到。'},
+  exp:{name:'經驗加倍',icon:'★',max:3,desc:'取得經驗值倍率提升：LV1 ×2、LV2 ×4、LV3 ×8。'},
+  ultGain:{name:'蓄力加倍',icon:'ϟ',max:1,desc:'所有大絕招蓄力獲得量永久變為 ×2。'}
+};
+
+function upgradeLevel(key){
+  if(key==='repair') return 0;
+  return player.upgrades[key]||0;
+}
+
+function weaponStats(){
+  const u=player.upgrades;
+  const damageMult=1+u.damage*.28;
+  const spreadCount = u.spread===0 ? 1 : Math.min(11,1+u.spread*2);
+  return {
+    fireRate: Math.max(.042, .118*Math.pow(.91,u.fireRate)),
+    damage: 12*damageMult*(u.damage>=10?1.55:1),
+    speed: u.damage>=10 ? 1450 : 1180,
+    spread: spreadCount,
+    spreadAngle: .055 + u.spread*.018,
+    pierce: u.pierce + (u.damage>=10?3:0),
+    laser: u.damage>=10,
+    explosive: u.explosive>0
+  };
+}
+
+function makePlayerBullet(x,y,ang,scale=1,fromDrone=false){
+  const st=weaponStats();
+  return {
+    x,y,r:5.5,
+    vx:Math.sin(ang)*st.speed,vy:-Math.cos(ang)*st.speed,
+    dmg:st.damage*scale,life:1.65,pierce:st.pierce,glow:1,
+    laser:st.laser, explosive:false, fromDrone
+  };
+}
+
+function ensureDroneUnits(){
+  const n=player.upgrades.drones;
+  while(player.droneUnits.length<n){
+    const i=player.droneUnits.length;
+    player.droneUnits.push({
+      x:player.x+(i%2?1:-1)*(65+i*7),
+      y:player.y+25,
+      vx:0,vy:0,fire:rand(.02,.18),bomb:rand(.2,.8),heading:0,target:null
+    });
+  }
+  if(player.droneUnits.length>n)player.droneUnits.length=n;
+}
+
+function allAutoTargets(){
+  const out=[];
+  for(const e of enemies){
+    if(!e.dead)out.push({kind:'enemy',ref:e,x:e.x,y:e.y,vx:e.vx||0,vy:e.vy||0});
+  }
+  if(boss){
+    if(boss.phase==='fighter'){
+      out.push({kind:'bossfighter',ref:boss,x:boss.x,y:boss.y,vx:boss.vx||0,vy:boss.vy||0});
+    }else{
+      for(const w of exposedFortressWeakpoints()){
+        out.push({kind:'weak',ref:w,x:boss.x+w.x,y:boss.y+w.y,vx:boss.vx||0,vy:0});
+      }
+    }
+  }
+  return out;
+}
+
+function nearestAutoTarget(x,y,maxDist=1400,nearPlayerOnly=false,indexBias=0){
+  const targets=allAutoTargets();
+  let best=null,bestScore=Infinity;
+  for(let i=0;i<targets.length;i++){
+    const t=targets[i];
+    if(nearPlayerOnly){
+      const pdx=t.x-player.x,pdy=t.y-player.y;
+      if(pdx*pdx+pdy*pdy>760*760 && t.kind!=='weak')continue;
+    }
+    const dx=t.x-x,dy=t.y-y,d2=dx*dx+dy*dy;
+    if(d2>maxDist*maxDist)continue;
+    const score=d2*(1+((i+indexBias)%4)*.025);
+    if(score<bestScore){bestScore=score;best=t;}
+  }
+  return best;
+}
+
+function moveDroneToward(d,tx,ty,dt,speed=620){
+  const dx=tx-d.x,dy=ty-d.y,dist=Math.hypot(dx,dy);
+  if(dist<1)return;
+  const step=Math.min(dist,speed*dt);
+  d.x+=dx/dist*step;
+  d.y+=dy/dist*step;
+}
+
+function fireDroneBullet(d,target){
+  if(bullets.length>=PERF_LIMITS.bullets)return;
+  const st=weaponStats();
+  const dx=target.x-d.x,dy=target.y-d.y;
+  const ang=Math.atan2(dx,-dy);
+  const shot=makePlayerBullet(d.x,d.y-5,ang,.72,true);
+  bullets.push(shot);
+
+  if(st.explosive && d.bomb<=0){
+    const sp=820;
+    const len=Math.hypot(dx,dy)||1;
+    bullets.push({
+      x:d.x,y:d.y,r:9,
+      vx:dx/len*sp,vy:dy/len*sp,
+      dmg:st.damage*.68,life:2.0,pierce:0,glow:1.0,
+      laser:false,explosive:true,fromDrone:true
+    });
+    d.bomb=1.25;
+  }
+}
+
+function updateDrones(dt){
+  ensureDroneUnits();
+  const n=player.droneUnits.length;
+  if(!n)return;
+
+  for(let i=0;i<n;i++){
+    const d=player.droneUnits[i];
+    d.fire-=dt;
+    d.bomb-=dt;
+
+    const target=nearestAutoTarget(d.x,d.y,900,true,i);
+    d.target=target;
+
+    if(target){
+      // 子艦是無敵單位，會主動離開母艦靠近敵人，但不直接撞進目標中心。
+      const side=((i%2)*2-1);
+      const desiredX=target.x+side*(58+(i%3)*18);
+      const desiredY=target.y+105+(i%2)*24;
+      moveDroneToward(d,desiredX,desiredY,dt,720);
+
+      d.heading=Math.atan2(target.y-d.y,target.x-d.x)+Math.PI/2;
+
+      if(d.fire<=0){
+        fireDroneBullet(d,target);
+        d.fire=Math.max(.11,weaponStats().fireRate*1.65);
+      }
+    }else{
+      const a=game.time*1.65+i*Math.PI*2/n;
+      const rx=76+Math.min(n,3)*7,ry=48;
+      const tx=player.x+Math.cos(a)*rx;
+      const ty=player.y+Math.sin(a)*ry+8;
+      moveDroneToward(d,tx,ty,dt,560);
+      d.heading=-a*.18;
+    }
+
+    d.x=clamp(d.x,28,W-28);
+    d.y=clamp(d.y,70,H-45);
+  }
+}
+
+function dronePositions(){
+  ensureDroneUnits();
+  return player.droneUnits;
+}
+
+function firePlayer(){
+  if(bullets.length>=PERF_LIMITS.bullets)return;
+  const st=weaponStats();
+  const count=st.spread;
+  const gap=st.spreadAngle;
+  for(let i=0;i<count;i++){
+    const off=i-(count-1)/2;
+    bullets.push(makePlayerBullet(player.x+off*7,player.y-38,off*gap,1,false));
+  }
+
+  // 爆裂彈獨立週期發射
+  if(st.explosive && player.bombCd<=0){
+    bullets.push({
+      x:player.x,y:player.y-44,r:12,vx:0,vy:-860,
+      dmg:st.damage*1.25,life:2.0,pierce:0,glow:1.4,
+      laser:false,explosive:true,fromDrone:false
+    });
+    player.bombCd=.52;
+  }
+
+  if(Math.random()<.35) sfx('shoot');
+  muzzle(player.x,player.y-35);
+}
+
+
+function exposedFortressWeakpoints(){
+  if(!boss || boss.phase!=='fortress' || !boss.weakpoints)return [];
+  return boss.weakpoints.filter(w=>!w.destroyed);
+}
+
+function fireSubgun(){
+  if(!player.upgrades.subgun || bullets.length>=PERF_LIMITS.bullets)return false;
+  const target=nearestAutoTarget(player.x,player.y,1500,false,0);
+  if(!target)return false;
+
+  const speed=860;
+  const dx0=target.x-player.x,dy0=target.y-player.y;
+  const dist=Math.hypot(dx0,dy0)||1;
+  const lead=Math.min(.30,dist/speed*.28);
+  const tx=target.x+(target.vx||0)*lead;
+  const ty=target.y+(target.vy||0)*lead;
+  const dx=tx-player.x,dy=ty-player.y;
+  const len=Math.hypot(dx,dy)||1;
+
+  const dmg=5.5+player.upgrades.subDamage*4.2+player.level*.12;
+  bullets.push({
+    x:player.x,y:player.y-2,r:4.5,
+    vx:dx/len*speed,vy:dy/len*speed,
+    dmg,life:2.2,pierce:0,glow:.75,
+    laser:false,explosive:false,fromDrone:false,subgun:true
+  });
+
+  tone(330,.025,'square',.004,70);
+  return true;
+}
+
+function updateSubgun(dt){
+  if(!player.upgrades.subgun)return;
+  player.subCd-=dt;
+  if(player.subCd>0)return;
+  if(fireSubgun()){
+    const lv=player.upgrades.subRate;
+    player.subCd=Math.max(.34,1.42*Math.pow(.76,lv));
+  }else{
+    player.subCd=.12;
+  }
+}
+
+function spawnEnemy(){
+  if(enemies.length>=PERF_LIMITS.enemies)return;
+  const d=stageDifficulty();
+  const s=game.stage;
+  const eliteChance = clamp((s-8)*.018,0,.38);
+  const elite=Math.random()<eliteChance;
+  const type = s>=12 && Math.random()<.22 ? 'strafer' : (Math.random()<.18 ? 'tank':'fighter');
+  const x=rand(90,W-90);
+  let hp= type==='tank' ? 85+s*6 : 28+s*3.3;
+  if(elite) hp*=2.2;
+  enemies.push({
+    x,y:-90-rand(0,140),r:type==='tank'?40:30,
+    hp,maxHp:hp, type, elite,
+    vx:type==='strafer'?rand(-110,110):rand(-35,35),
+    vy:d.enemySpeed*(type==='tank'?.58:rand(.78,1.12)),
+    fire:rand(.5,d.fireRate), age:0, seed:rand(0,1000),
+    value:Math.floor((type==='tank'?150:90)*(elite?2.2:1)*(1+s*.05)),
+    xp:Math.floor((type==='tank'?16:10)*(elite?1.7:1))
+  });
+}
+
+const FORTRESS_TYPES = [
+  {
+    id:'bastion',name:'BASTION FORTRESS',
+    weak:[[-270,145],[-90,154],[90,154],[270,145]],
+    segments:[
+      ['leftWing',-350,-46,185,154,-278,78],
+      ['upperLeft',-160,-116,140,132,-100,-5],
+      ['upperRight',20,-116,140,132,100,-5],
+      ['rightWing',165,-46,185,154,278,78]
+    ]
+  },
+  {
+    id:'arrow',name:'ARROWHEAD CITADEL',
+    weak:[[-300,138],[-118,166],[118,166],[300,138]],
+    segments:[
+      ['leftWing',-370,-20,200,130,-305,70],
+      ['upperLeft',-185,-132,165,160,-105,-12],
+      ['upperRight',20,-132,165,160,105,-12],
+      ['rightWing',170,-20,200,130,305,70]
+    ]
+  },
+  {
+    id:'twin',name:'TWIN TOWER BASE',
+    weak:[[-245,158],[-78,176],[78,176],[245,158]],
+    segments:[
+      ['leftWing',-325,-110,155,220,-245,35],
+      ['upperLeft',-160,-72,125,176,-92,42],
+      ['upperRight',35,-72,125,176,92,42],
+      ['rightWing',170,-110,155,220,245,35]
+    ]
+  },
+  {
+    id:'ring',name:'RING FORTRESS',
+    weak:[[-292,150],[-104,170],[104,170],[292,150]],
+    segments:[
+      ['leftWing',-360,-62,178,166,-288,58],
+      ['upperLeft',-182,-132,150,166,-108,-20],
+      ['upperRight',32,-132,150,166,108,-20],
+      ['rightWing',182,-62,178,166,288,58]
+    ]
+  }
+];
+
+function getFortressType(stage){
+  return FORTRESS_TYPES[(stage-1)%FORTRESS_TYPES.length];
+}
+
+function spawnBoss(){
+  game.stageState='boss';
+  enemyBullets.length=0;
+  const s=game.stage;
+  const hard=s>25;
+  const type=getFortressType(s);
+
+  const outerHp=hard?1150+(s-25)*155:430+s*72;
+  const fighterFullHp=Math.max(620,outerHp*(hard?1.45:1.25));
+  const fighterHp=fighterFullHp*(hard?.36:.28);
+
+  boss={
+    phase:'fortress',
+    fortressType:type.id,
+    fortressName:type.name,
+    x:W/2,y:-310,r:350,w:760,h:310,
+    age:0,fire:.75,spawn:3.8,vx:hard?115:85,vy:0,targetY:205,
+    name:type.name,
+    weakpoints:type.weak.map((p,i)=>({
+      id:'W'+(i+1),x:p[0],y:p[1],r:40,
+      hp:outerHp*(i===1||i===2?.88:1),
+      maxHp:outerHp*(i===1||i===2?.88:1),
+      destroyed:false,segment:type.segments[i][0]
+    })),
+    segments:type.segments.map(sg=>({
+      id:sg[0],x:sg[1],y:sg[2],w:sg[3],h:sg[4],
+      destroyed:false,turretX:sg[5],turretY:sg[6]
+    })),
+    fighterHp,fighterMaxHp:fighterFullHp,fighterR:112,
+    fighterFire:.95,fighterBurst:2.8,fighterDash:3.6,fighterSmoke:0,defeated:false,
+    fighterTargetX:W/2,fighterTargetY:220,
+    fighterAngle:0
+  };
+
+  ui.bossName.textContent=boss.name;
+  ui.boss.classList.add('show');
+  announce('FORTRESS',`${type.name} · 先拆前緣弱點`,1200);
+  sfx('boss');
+}
+
+function fortressOuterRemaining(){
+  if(!boss || boss.phase!=='fortress')return 0;
+  return boss.weakpoints.filter(w=>!w.destroyed).length;
+}
+
+function fortressIntegrity(){
+  if(!boss)return 0;
+
+  if(boss.phase==='fighter'){
+    const max=Math.max(1,boss.fighterMaxHp||1);
+    return clamp((boss.fighterHp||0)/max,0,1);
+  }
+
+  let hp=0,max=0;
+  for(const w of boss.weakpoints){
+    hp+=Math.max(0,w.hp);
+    max+=w.maxHp;
+  }
+  return max?hp/max:0;
+}
+
+function beginBossFighterPhase(){
+  if(!boss || boss.phase!=='fortress')return;
+
+  const bx=boss.x,by=boss.y;
+  boss.phase='fighter';
+  boss.name='DAMAGED FORTRESS ACE';
+  ui.bossName.textContent='DAMAGED FORTRESS ACE';
+
+  // 基地解體時清場，避免殘留小兵讓子艦/副砲分心，也避免 HOSTILES 顯示錯誤。
+  enemies.length=0;
+  enemyBullets.length=0;
+
+  // 基地外殼全面解體，戰鬥機本體從中央脫離。
+  for(let i=0;i<48;i++){
+    particle(
+      bx+rand(-320,320),by+rand(-100,150),
+      rand(-260,260),rand(-180,260),
+      rand(.35,1.0),rand(3,9),'boss'
+    );
+  }
+  game.shake=24;
+  boss.x=bx;
+  boss.y=by+30;
+  boss.vx=rand(-1,1)>=0?180:-180;
+  boss.vy=0;
+  boss.fighterFire=.95;
+  boss.fighterBurst=2.8;
+  boss.fighterDash=3.4;
+
+  const remainPct=Math.ceil(boss.fighterHp/boss.fighterMaxHp*100);
+  announce('FINAL DUEL',`殘存戰鬥機脫離 · 僅剩 ${remainPct}%`,1200);
+  sfx('boss');
+}
+
+function fortressOuterRemaining(){
+  if(!boss) return 0;
+  return boss.weakpoints.filter(w=>!w.core&&!w.destroyed).length;
+}
+
+function fortressIntegrity(){
+  if(!boss)return 0;
+  let hp=0,max=0;
+  for(const w of boss.weakpoints){
+    hp+=Math.max(0,w.hp);
+    max+=w.maxHp;
+  }
+  return max?hp/max:0;
+}
+
+function destroyFortressWeakpoint(w){
+  if(!boss || boss.phase!=='fortress' || w.destroyed)return;
+  w.destroyed=true;
+  w.hp=0;
+
+  if(w.segment){
+    const seg=boss.segments.find(s=>s.id===w.segment);
+    if(seg)seg.destroyed=true;
+  }
+
+  const wx=boss.x+w.x,wy=boss.y+w.y;
+  burst(wx,wy,54,'elite');
+  game.shake=Math.max(game.shake,16);
+  game.score+=320;
+  gainUlt(4);
+  sfx('kill');
+
+  const remaining=fortressOuterRemaining();
+  if(remaining===0){
+    beginBossFighterPhase();
+  }else{
+    announce('ARMOR BREAK',`剩餘外部弱點 ${remaining}`,650);
+  }
+}
+
+function damageFortressWeakpoint(w,dmg){
+  if(!boss || boss.phase!=='fortress' || !w || w.destroyed)return false;
+  w.hp-=dmg;
+  game.score+=1;
+  const wx=boss.x+w.x,wy=boss.y+w.y;
+  burst(wx+rand(-7,7),wy+rand(-7,7),2,'hit');
+  if(w.hp<=0)destroyFortressWeakpoint(w);
+  return true;
+}
+
+function damageBossFighter(amount,hitX=null,hitY=null){
+  if(!boss || boss.phase!=='fighter' || boss.defeated || game.stageState==='transition')return {hit:false,killed:false};
+
+  const dmg=Math.max(0,Number(amount)||0);
+  if(dmg<=0)return {hit:false,killed:false};
+
+  boss.fighterHp=Math.max(0,boss.fighterHp-dmg);
+  game.score+=2;
+
+  const fx=hitX==null?boss.x:hitX;
+  const fy=hitY==null?boss.y:hitY;
+  burst(fx,fy,2,'hit');
+
+  if(boss.fighterHp<=0){
+    boss.defeated=true;
+    bossDefeated();
+    return {hit:true,killed:true};
+  }
+
+  return {hit:true,killed:false};
+}
+
+function segmentCircleIntersects(x1,y1,x2,y2,cx,cy,r){
+  const vx=x2-x1,vy=y2-y1;
+  const wx=cx-x1,wy=cy-y1;
+  const vv=vx*vx+vy*vy;
+  let t=vv>0?(wx*vx+wy*vy)/vv:0;
+  t=clamp(t,0,1);
+  const px=x1+vx*t,py=y1+vy*t;
+  const dx=px-cx,dy=py-cy;
+  return dx*dx+dy*dy<=r*r;
+}
+
+function fortressPointHit(x,y,r=0){
+  if(!boss || boss.phase!=='fortress')return {type:'none'};
+  const lx=x-boss.x,ly=y-boss.y;
+
+  for(const w of exposedFortressWeakpoints()){
+    const dx=lx-w.x,dy=ly-w.y;
+    if(dx*dx+dy*dy<(w.r+r)*(w.r+r))return {type:'weak',weak:w};
+  }
+
+  for(const s of boss.segments){
+    if(s.destroyed)continue;
+    if(lx>s.x-r&&lx<s.x+s.w+r&&ly>s.y-r&&ly<s.y+s.h+r)return {type:'armor',segment:s};
+  }
+
+  // 中央基地骨架也是硬裝甲。
+  if(Math.abs(lx)<175+r && ly>-135-r && ly<132+r)return {type:'armor'};
+  return {type:'none'};
+}
+
+function hitFortressBullet(b){
+  if(!boss)return false;
+
+  if(boss.phase==='fighter'){
+    const px=b.prevX??b.x,py=b.prevY??b.y;
+    if(segmentCircleIntersects(px,py,b.x,b.y,boss.x,boss.y,boss.fighterR+b.r)){
+      const result=damageBossFighter(b.dmg,b.x,b.y);
+
+      // 如果直接傷害已經擊破 BOSS，bossDefeated() 會把 boss 清掉；
+      // 此時絕不能再進 explodeShot() 讀取 boss。
+      if(b.explosive && !result.killed && boss){
+        explodeShot(b.x,b.y,b.dmg);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  const px=b.prevX??b.x;
+  const py=b.prevY??b.y;
+
+  for(const w of exposedFortressWeakpoints()){
+    const wx=boss.x+w.x,wy=boss.y+w.y;
+    if(segmentCircleIntersects(px,py,b.x,b.y,wx,wy,w.r+b.r+4)){
+      damageFortressWeakpoint(w,b.dmg);
+      if(b.explosive)explodeShot(b.x,b.y,b.dmg);
+      return true;
+    }
+  }
+
+  const h=fortressPointHit(b.x,b.y,b.r);
+  if(h.type==='weak'){
+    damageFortressWeakpoint(h.weak,b.dmg);
+    if(b.explosive)explodeShot(b.x,b.y,b.dmg);
+    return true;
+  }
+  if(h.type==='armor'){
+    burst(b.x,b.y,3,'spark');
+    return true;
+  }
+  return false;
+}
+
+function damageExposedFortressByUltimate(){
+  if(!boss)return;
+
+  if(boss.phase==='fighter'){
+    const bx=boss.x,by=boss.y;
+    const dmg=Math.min(boss.fighterMaxHp*.20,1200+player.level*70);
+
+    for(let i=0;i<14;i++){
+      lightning.push(makeBolt(rand(bx-140,bx+140),0,bx+rand(-75,75),by+rand(-65,70),rand(3,8)));
+    }
+
+    damageBossFighter(dmg,bx,by);
+    return;
+  }
+
+  const targets=exposedFortressWeakpoints().slice();
+  for(const w of targets){
+    const dmg=Math.min(w.maxHp*.24,620+player.level*58);
+    damageFortressWeakpoint(w,dmg);
+    if(!boss || boss.phase==='fighter')break;
+    const wx=boss.x+w.x,wy=boss.y+w.y;
+    for(let i=0;i<6;i++){
+      lightning.push(makeBolt(rand(wx-90,wx+90),0,wx+rand(-30,30),wy+rand(-30,30),rand(3,7)));
+    }
+  }
+}
+
+function bossFire(){
+  if(!boss || enemyBullets.length>=PERF_LIMITS.enemyBullets)return;
+  const s=game.stage,hard=s>25;
+  const speed=hard?350+(s-25)*10:245+s*3;
+
+  if(boss.phase==='fighter'){
+    const hpRatio=clamp(boss.fighterHp/boss.fighterMaxHp,0,1);
+    const aimed=Math.atan2(player.y-boss.y,player.x-boss.x);
+    const count=hpRatio<.30?(hard?3:2):(hard?5:3);
+    const spread=hard?.13:.17;
+    const fighterSpeed=(hard?speed*.88:speed*.78)*(.90+.10*hpRatio);
+
+    for(let i=0;i<count && enemyBullets.length<PERF_LIMITS.enemyBullets;i++){
+      const a=aimed+(i-(count-1)/2)*spread;
+      enemyBullets.push({
+        x:boss.x,y:boss.y+28,r:hard?9:7,
+        vx:Math.cos(a)*fighterSpeed,vy:Math.sin(a)*fighterSpeed,
+        hp:1,maxHp:1,life:8,dmg:1,boss:true
+      });
+    }
+    return;
+  }
+
+  const activeSegments=boss.segments.filter(seg=>!seg.destroyed);
+  for(const seg of activeSegments){
+    const ox=boss.x+seg.turretX,oy=boss.y+seg.turretY;
+    const aimed=Math.atan2(player.y-oy,player.x-ox);
+    const count=hard?2:1;
+    for(let i=0;i<count;i++){
+      const a=aimed+(i-(count-1)/2)*.13;
+      enemyBullets.push({
+        x:ox,y:oy,r:hard?10:8,
+        vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,
+        hp:hard?1+Math.floor((s-25)/10):1,maxHp:1,life:8,dmg:1,boss:true
+      });
+    }
+  }
+}
+
+function enemyFire(e){
+  if(enemyBullets.length>=PERF_LIMITS.enemyBullets)return;
+  const d=stageDifficulty();
+  const a=Math.atan2(player.y-e.y,player.x-e.x);
+  const count=(game.stage>25 && e.elite)?3:1;
+  for(let i=0;i<count;i++){
+    const aa=a+(i-(count-1)/2)*.14;
+    enemyBullets.push({
+      x:e.x,y:e.y+18,r:e.elite?9:7,
+      vx:Math.cos(aa)*d.bulletSpeed,vy:Math.sin(aa)*d.bulletSpeed,
+      hp:d.bulletHp+(e.elite&&game.stage>=30?1:0),
+      maxHp:d.bulletHp,life:8,dmg:d.dmg+(e.elite?2:0),boss:false
+    });
+  }
+}
+
+function addXP(v,deferOpen=false){
+  const mult=Math.pow(2,player.upgrades.exp);
+  player.xp+=v*mult;
+  let gained=0;
+
+  while(player.xp>=player.xpNeed){
+    player.xp-=player.xpNeed;
+    player.level++;
+    player.xpNeed=Math.floor(100*Math.pow(1.115,player.level-1));
+    gained++;
+  }
+
+  if(gained>0){
+    game.pendingUpgrades+=gained;
+    burst(player.x,player.y,34,'level');
+    sfx('level');
+
+    // 關卡中照常立即選；BOSS 過關獎勵則延到下一關真正開始後再選。
+    if(!deferOpen && !game.upgrading && game.stageState!=='transition'){
+      showUpgradeChoices();
+    }
+  }
+}
+
+function availableUpgradeKeys(){
+  const keys=[];
+  for(const [key,d] of Object.entries(UPGRADE_DEFS)){
+    if(key==='repair'){
+      if(player.hp<player.maxHp)keys.push(key);
+      continue;
+    }
+
+    if((key==='subDamage'||key==='subRate') && player.upgrades.subgun<1)continue;
+    if(key==='shield' && player.upgrades.shield>=1)continue;
+
+    if(upgradeLevel(key)<d.max)keys.push(key);
+  }
+  if(keys.length===0)keys.push('repair');
+  return keys;
+}
+
+function sampleChoices(count){
+  const pool=availableUpgradeKeys();
+  const choices=[];
+  while(pool.length && choices.length<count){
+    const i=Math.floor(Math.random()*pool.length);
+    choices.push(pool.splice(i,1)[0]);
+  }
+  return choices;
+}
+
+function showUpgradeChoices(){
+  if(game.pendingUpgrades<=0){ game.upgrading=false; ui.upgrade.classList.add('hidden'); return; }
+  game.upgrading=true;
+  const count=player.level>10?3:2;
+  game.currentChoices=sampleChoices(count);
+  ui.upgradeCards.innerHTML='';
+  ui.upgradeCards.classList.toggle('two',game.currentChoices.length===2);
+  ui.upgradeTitle.textContent=`LEVEL ${player.level} — 選擇強化`;
+  ui.upgradeHint.textContent=game.currentChoices.length===3?'按 1 / 2 / 3 選擇':'按 1 / 2 選擇';
+
+  game.currentChoices.forEach((key,idx)=>{
+    const d=UPGRADE_DEFS[key];
+    const lv=upgradeLevel(key);
+    const next = key==='repair' ? '立即使用' : `LV.${lv} → LV.${lv+1}`;
+    const card=document.createElement('div');
+    card.className='upgradeCard';
+    card.innerHTML=`
+      <div class="upgradeKey">${idx+1}</div>
+      <div class="upgradeIcon">${d.icon}</div>
+      <div class="upgradeName">${d.name}</div>
+      <div class="upgradeLevel">${next}</div>
+      <div class="upgradeDesc">${d.desc}</div>
+      <div class="upgradeMax">${key==='repair'?'FULL REPAIR':`MAX LV.${d.max}`}</div>`;
+    card.onclick=()=>chooseUpgrade(idx);
+    ui.upgradeCards.appendChild(card);
+  });
+  ui.upgrade.classList.remove('hidden');
+}
+
+function chooseUpgrade(index){
+  if(!game.upgrading)return;
+  const key=game.currentChoices[index];
+  if(!key)return;
+  applyUpgrade(key);
+  game.pendingUpgrades=Math.max(0,game.pendingUpgrades-1);
+  ui.upgrade.classList.add('hidden');
+  game.currentChoices=[];
+  updateUI();
+  if(game.pendingUpgrades>0){
+    setTimeout(showUpgradeChoices,80);
+  }else{
+    game.upgrading=false;
+    game.deferredUpgradeTimer=0;
+    announce('POWER UP',UPGRADE_DEFS[key].name,700);
+  }
+}
+
+function applyUpgrade(key){
+  if(key==='repair'){
+    player.hp=player.maxHp;
+    burst(player.x,player.y,26,'heal');
+    return;
+  }
+
+  const d=UPGRADE_DEFS[key];
+  if(player.upgrades[key]>=d.max)return;
+  player.upgrades[key]++;
+
+  if(key==='armor'){
+    player.maxHp+=1;
+    player.hp=Math.min(player.maxHp,player.hp+1);
+  }
+  if(key==='radar')announce('RADAR ONLINE','來襲敵機將提前標記',800);
+  if(key==='damage'&&player.upgrades.damage===10)announce('LASER ONLINE','主砲進化：高能雷射',1000);
+
+  if(key==='drones'){
+    ensureDroneUnits();
+    burst(player.x,player.y,18,'level');
+    announce('DRONE LINK',`護航子艦 ${player.upgrades.drones} / 5`,650);
+  }
+
+  if(key==='shield'){
+    burst(player.x,player.y,20,'level');
+    announce('SHIELD READY','下一次攻擊將被完全抵銷',700);
+  }
+
+  if(key==='subgun'){
+    player.subCd=0;
+    announce('OMNI CANNON','360° 自動副砲上線',800);
+  }
+}
+
+function gainUlt(v){
+  const mult=player.upgrades.ultGain?2:1;
+  player.ult=clamp(player.ult+v*mult,0,player.ultMax);
+}
+
+function useUltimate(){
+  if(player.ult<player.ultMax || !game.running || game.paused || game.upgrading) return;
+  player.ult=0;
+  game.flash=1;
+  game.shake=28;
+  sfx('ult');
+  announce('THUNDER BREAK','全屏雷霆殲滅',900);
+  for(const e of enemies){ killEnemy(e); }
+  for(const b of enemyBullets){
+    burst(b.x,b.y,5,'spark');
+    game.score+=8;
+    game.destroyedBullets++;
+  }
+  enemyBullets.length=0;
+  if(boss){
+    damageExposedFortressByUltimate();
+  }
+  for(let i=0;i<36;i++){
+    lightning.push(makeBolt(rand(0,W),0,rand(0,W),rand(H*.35,H),rand(2.5,7)));
+  }
+  burst(W/2,H/2,80,'ult');
+}
+
+function explodeShot(x,y,dmg){
+  const radius=125;
+  game.shake=Math.max(game.shake,8);
+  burst(x,y,26,'boss');
+  for(const e of enemies){
+    if(e.dead)continue;
+    const dx=e.x-x,dy=e.y-y;
+    if(dx*dx+dy*dy<radius*radius){
+      e.hp-=dmg*.82;
+      if(e.hp<=0)killEnemy(e);
+    }
+  }
+  for(const eb of enemyBullets){
+    if(eb.dead)continue;
+    const dx=eb.x-x,dy=eb.y-y;
+    if(dx*dx+dy*dy<radius*radius){
+      eb.dead=true; game.destroyedBullets++; game.score+=6; gainUlt(.12);
+    }
+  }
+  if(boss){
+    if(boss.phase==='fighter'){
+      const dx=boss.x-x,dy=boss.y-y;
+      if(dx*dx+dy*dy<(radius+boss.fighterR)*(radius+boss.fighterR)){
+        damageBossFighter(dmg*.45,x,y);
+      }
+    }else{
+      for(const w of exposedFortressWeakpoints().slice()){
+        if(!boss || boss.phase==='fighter')break;
+        const wx=boss.x+w.x,wy=boss.y+w.y;
+        const dx=wx-x,dy=wy-y;
+        if(dx*dx+dy*dy<(radius+w.r)*(radius+w.r))damageFortressWeakpoint(w,dmg*.55);
+      }
+    }
+  }
+}
+
+function makeBolt(x1,y1,x2,y2,width=4){
+  const pts=[{x:x1,y:y1}];
+  const seg=10;
+  for(let i=1;i<seg;i++){
+    const t=i/seg;
+    pts.push({x:lerp(x1,x2,t)+rand(-34,34),y:lerp(y1,y2,t)+rand(-18,18)});
+  }
+  pts.push({x:x2,y:y2});
+  return {pts,life:.32,max:.32,width};
+}
+
+function hitPlayer(dmg){
+  if(player.inv>0)return;
+
+  if(player.upgrades.shield>0){
+    player.upgrades.shield=0;
+    player.inv=.42;
+    player.hitPulse=.35;
+    game.shake=Math.max(game.shake,7);
+    burst(player.x,player.y,28,'level');
+    tone(520,.10,'sine',.025,-170);
+    announce('SHIELD BREAK','傷害已完全抵銷',520);
+    return;
+  }
+
+  player.hp-=dmg;
+  player.inv=.65;
+  player.hitPulse=1;
+  game.shake=14;
+  game.combo=0;
+  sfx('hurt');
+  burst(player.x,player.y,22,'hurt');
+  if(player.hp<=0)endGame();
+}
+
+function killEnemy(e){
+  if(e.dead)return;
+  e.dead=true;
+  game.kills++; game.stageKills++;
+  game.score+=e.value;
+  game.combo++; game.comboTimer=2.4; game.maxCombo=Math.max(game.maxCombo,game.combo);
+  addXP(e.xp);
+  gainUlt(e.elite?4.0:(e.type==='tank'?2.6:1.65));
+  burst(e.x,e.y,e.elite?30:18,e.elite?'elite':'enemy');
+  if(Math.random()<.035) pickups.push({x:e.x,y:e.y,r:14,vy:110,type:'repair',life:9});
+  sfx('kill');
+}
+
+function bossDefeated(){
+  if(!boss || game.stageState==='transition')return;
+
+  const defeatedBoss=boss;
+  const bx=defeatedBoss.x,by=defeatedBoss.y;
+  const reward=950+game.stage*140;
+
+  // 先鎖狀態、先切斷 boss 參照，再做獎勵與特效。
+  // 後續任何同幀武器事件都只會看到 boss === null。
+  defeatedBoss.defeated=true;
+  game.stageState='transition';
+  game.transition=2.2;
+  game.transitionAge=0;
+  game.deferredUpgradeTimer=0;
+  ui.upgrade.classList.add('hidden');
+  boss=null;
+
+  game.score+=reward;
+  addXP(70+game.stage*4,true);
+  gainUlt(20);
+  burst(bx,by,64,'boss');
+
+  for(let i=0;i<10;i++){
+    setTimeout(()=>{
+      if(game && particles.length<PERF_LIMITS.particles){
+        burst(rand(bx-190,bx+190),rand(by-100,by+110),18,'boss');
+      }
+    },i*60);
+  }
+
+  sfx('kill');
+  enemies.length=0;
+  enemyBullets.length=0;
+  bullets.length=0;
+  pickups.length=0;
+  ui.boss.classList.remove('show');
+  announce('STAGE CLEAR',`BONUS +${reward.toLocaleString()}`,1500);
+}
+
+function endGame(){
+  game.over=true;game.running=false;
+  ui.result.innerHTML=`抵達關卡 <b>${game.stage}</b><br>總分 <b>${game.score.toLocaleString()}</b><br>擊墜 <b>${game.kills}</b> 架 · 最高連擊 <b>${game.maxCombo}</b>`;
+  ui.over.classList.remove('hidden');
+}
+
+const PERF_LIMITS={
+  bullets:850,
+  enemyBullets:520,
+  particles:560,
+  lightning:96,
+  pickups:28,
+  enemies:56
+};
+
+function particle(x,y,vx,vy,life,size,type){
+  if(particles.length>=PERF_LIMITS.particles)return;
+  particles.push({x,y,vx,vy,life,max:life,size,type,rot:rand(0,Math.PI*2),vr:rand(-6,6)});
+}
+function burst(x,y,n,type='enemy'){
+  const room=Math.max(0,PERF_LIMITS.particles-particles.length);
+  if(room<=0)return;
+  const visualCap=type==='boss'?64:32;
+  n=Math.min(n,visualCap,room);
+  for(let i=0;i<n;i++){
+    const a=rand(0,Math.PI*2),sp=rand(70,type==='boss'?650:360);
+    particle(x,y,Math.cos(a)*sp,Math.sin(a)*sp,rand(.25,type==='boss'?1.0:.68),rand(2,type==='boss'?9:7),type);
+  }
+}
+function muzzle(x,y){
+  for(let i=0;i<4;i++) particle(x+rand(-10,10),y,rand(-70,70),rand(-230,-90),rand(.08,.16),rand(1,3),'muzzle');
+}
+
+function update(dt){
+  if(!game.running || game.paused)return;
+
+  // 過關流程優先權最高：即使某個極端狀況殘留 upgrading，也不能讓 transition 停住。
+  if(game.stageState==='transition' && game.upgrading){
+    game.upgrading=false;
+    ui.upgrade.classList.add('hidden');
+    game.deferredUpgradeTimer=Math.max(game.deferredUpgradeTimer,.45);
+  }
+
+  if(game.deferredUpgradeTimer>0 && !game.upgrading){
+    game.deferredUpgradeTimer-=dt;
+    if(game.deferredUpgradeTimer<=0 && game.pendingUpgrades>0 && game.stageState==='wave'){
+      showUpgradeChoices();
+    }
+  }
+
+  if(game.upgrading)return;
+
+  game.time+=dt;
+  game.flash=Math.max(0,game.flash-dt*2.1);
+  game.shake=Math.max(0,game.shake-dt*35);
+  player.inv=Math.max(0,player.inv-dt);
+  player.bombCd=Math.max(0,player.bombCd-dt);
+  player.hitPulse=Math.max(0,player.hitPulse-dt*2.5);
+
+  // background
+  for(const s of stars){
+    s.y += (70+260*s.z)*dt;
+    if(s.y>H+10){s.y=-10;s.x=rand(0,W)}
+  }
+
+  // movement
+  let dx=0,dy=0;
+  if(keys.has('ArrowLeft')||keys.has('KeyA'))dx--;
+  if(keys.has('ArrowRight')||keys.has('KeyD'))dx++;
+  if(keys.has('ArrowUp')||keys.has('KeyW'))dy--;
+  if(keys.has('ArrowDown')||keys.has('KeyS'))dy++;
+  const mag=Math.hypot(dx,dy)||1;
+  const slow=keys.has('ShiftLeft')||keys.has('ShiftRight');
+  const speedBoost=1+player.upgrades.speed*.10;
+  const sp=player.speed*speedBoost*(slow?.48:1);
+  player.x=clamp(player.x+dx/mag*sp*dt,45,W-45);
+  player.y=clamp(player.y+dy/mag*sp*dt,130,H-68);
+
+  player.trail.push({x:player.x,y:player.y+32,life:.35});
+  if(player.trail.length>34)player.trail.shift();
+  for(const t of player.trail)t.life-=dt;
+
+  // autonomous support systems
+  updateDrones(dt);
+  updateSubgun(dt);
+
+  // main autofire
+  player.fireCd-=dt;
+  if(player.fireCd<=0){
+    firePlayer();
+    player.fireCd=weaponStats().fireRate;
+  }
+
+  // stage wave
+  if(game.stageState==='wave'){
+    const d=stageDifficulty();
+    game.spawnTimer-=dt;
+    if(game.stageKills<game.quota && game.spawnTimer<=0 && enemies.length<d.maxEnemies){
+      const batch = game.stage>25 && Math.random()<.28 ? 2 : 1;
+      for(let i=0;i<batch;i++) spawnEnemy();
+      game.spawnTimer=Math.max(.16, .72-game.stage*.012-player.level*.008);
+    }
+    if(game.stageKills>=game.quota && enemies.length===0){
+      game.stageState='bossWarning';
+      game.bossDelay=3.4;
+      enemyBullets.length=0;
+      announce('AHEAD','大型基地接近',650);
+    }
+  } else if(game.stageState==='bossWarning'){
+    game.bossDelay-=dt;
+    if(game.bossDelay<=0)spawnBoss();
+  } else if(game.stageState==='transition'){
+    game.transitionAge+=dt;
+    game.transition=Math.max(-.1,game.transition-dt);
+
+    // 正常 2.2 秒轉場；若任何非預期狀態造成計時異常，4 秒硬保險直接進下一關。
+    if(game.transition<=0 || game.transitionAge>=4){
+      const nextStage=game.stage+1;
+      setupStage(nextStage);
+    }
+  }
+
+  // enemies
+  for(const e of enemies){
+    e.age+=dt;
+    if(e.type==='strafer') e.x += Math.sin(e.age*2.4+e.seed)*210*dt + e.vx*dt*.3;
+    else e.x+=e.vx*dt;
+    e.y+=e.vy*dt;
+    e.x=clamp(e.x,45,W-45);
+    e.fire-=dt;
+    if(e.fire<=0 && e.y>40 && e.y<H*.78){
+      enemyFire(e);
+      const d=stageDifficulty();
+      e.fire=rand(d.fireRate*.8,d.fireRate*1.35)*(e.elite?.78:1);
+    }
+    if(e.y>H+90){e.dead=true; game.stageKills++; game.combo=0;}
+    if(circleHit(e,player,4)){e.dead=true;hitPlayer(1);burst(e.x,e.y,22,'enemy')}
+  }
+  enemies=enemies.filter(e=>!e.dead);
+
+  // boss
+  if(boss){
+    boss.age+=dt;
+
+    if(boss.phase==='fortress'){
+      if(boss.y<boss.targetY)boss.y+=145*dt;
+      else{
+        boss.x+=boss.vx*dt;
+        if(boss.x<390||boss.x>W-390){
+          boss.vx*=-1;
+          boss.x=clamp(boss.x,390,W-390);
+        }
+      }
+
+      boss.fire-=dt;
+      if(boss.fire<=0){
+        bossFire();
+        const hard=game.stage>25;
+        const remaining=fortressOuterRemaining();
+        boss.fire=hard
+          ? Math.max(.42,.94-(4-remaining)*.055)
+          : Math.max(.82,1.52-game.stage*.018);
+      }
+
+      boss.spawn-=dt;
+      if(boss.spawn<=0 && game.stage>=8){
+        const n=game.stage>25?2:1;
+        for(let i=0;i<n;i++)spawnEnemy();
+        boss.spawn=game.stage>25?3.0:5.0;
+      }
+
+      const lx=player.x-boss.x,ly=player.y-boss.y;
+      if(Math.abs(lx)<340 && ly>-125 && ly<130){
+        hitPlayer(2);
+        player.y=Math.min(H-68,boss.y+178);
+      }
+    }else{
+      // FINAL DUEL：這不是第二隻完整 BOSS，而是基地解體後勉強脫離的殘存戰鬥機。
+      const hpRatio=clamp(boss.fighterHp/boss.fighterMaxHp,0,1);
+      const cripple=hpRatio<.25?.58:hpRatio<.55?.78:1;
+
+      boss.fighterDash-=dt;
+      if(boss.fighterDash<=0){
+        boss.fighterTargetX=rand(290,W-290);
+        boss.fighterTargetY=rand(165,300);
+        boss.fighterDash=(game.stage>25?rand(2.8,3.8):rand(3.6,4.8))/cripple;
+      }
+
+      const dx=boss.fighterTargetX-boss.x;
+      const dy=boss.fighterTargetY-boss.y;
+      const dist=Math.hypot(dx,dy)||1;
+      const moveSpeed=(game.stage>25?205:145)*cripple;
+      const step=Math.min(dist,moveSpeed*dt);
+      boss.x+=dx/dist*step;
+      boss.y+=dy/dist*step;
+
+      boss.fighterAngle=clamp(dx/560,-.22,.22);
+
+      boss.fighterFire-=dt;
+      if(boss.fighterFire<=0){
+        bossFire();
+        boss.fighterFire=(game.stage>25?.86:1.22)/Math.max(.72,cripple);
+      }
+
+      boss.fighterBurst-=dt;
+      if(boss.fighterBurst<=0){
+        const n=hpRatio<.35?(game.stage>25?6:4):(game.stage>25?9:6);
+        const sp=(game.stage>25?220:185)*(.88+.12*hpRatio);
+        for(let i=0;i<n && enemyBullets.length<PERF_LIMITS.enemyBullets;i++){
+          const a=(i/n)*Math.PI*2+boss.age*.24;
+          enemyBullets.push({
+            x:boss.x,y:boss.y,r:7,
+            vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+            hp:1,maxHp:1,life:7,dmg:1,boss:true
+          });
+        }
+        boss.fighterBurst=hpRatio<.35
+          ? (game.stage>25?4.2:5.0)
+          : (game.stage>25?3.1:4.0);
+      }
+
+      // 受損越重，越常冒煙與噴火花，視覺上呈現「只是在掙扎」。
+      boss.fighterSmoke-=dt;
+      if(boss.fighterSmoke<=0){
+        const smokeRate=hpRatio<.25?.055:hpRatio<.55?.10:.18;
+        boss.fighterSmoke=smokeRate;
+        particle(
+          boss.x+rand(-52,52),boss.y+rand(10,82),
+          rand(-35,35),rand(55,125),
+          rand(.28,.52),rand(3,7),
+          hpRatio<.35?'hurt':'spark'
+        );
+      }
+
+      if(circleHit({x:boss.x,y:boss.y,r:boss.fighterR},player,-10)){
+        hitPlayer(2);
+      }
+    }
+  }
+
+  // player bullets
+  for(const b of bullets){
+    b.prevX=b.x;b.prevY=b.y;
+    b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt;
+    let consumed=false;
+
+    // destroy enemy bullets first
+    for(const eb of enemyBullets){
+      if(eb.dead)continue;
+      if(circleHit(b,eb,2)){
+        eb.hp-=Math.max(1,Math.floor(b.dmg/14));
+        if(eb.hp<=0){
+          eb.dead=true; game.destroyedBullets++; game.score+=6;
+          gainUlt(.15);
+          burst(eb.x,eb.y,4,'spark');
+        }
+        if(b.explosive){ explodeShot(b.x,b.y,b.dmg); consumed=true; break; }
+        if(b.pierce>0)b.pierce--;else{consumed=true;break}
+      }
+    }
+    if(consumed){b.dead=true;continue}
+
+    for(const e of enemies){
+      if(e.dead)continue;
+      if(circleHit(b,e,-2)){
+        e.hp-=b.dmg;
+        burst(b.x,b.y,2,'hit');
+        if(b.explosive){ explodeShot(b.x,b.y,b.dmg); b.dead=true; }
+        if(e.hp<=0)killEnemy(e);
+        if(b.dead) break;
+        if(b.pierce>0)b.pierce--;else{b.dead=true;break}
+      }
+    }
+    if(b.dead)continue;
+    if(boss && hitFortressBullet(b)){
+      game.score+=1;
+      // 基地的硬裝甲與弱點都會截停當前彈丸；穿透不能穿過「硬」結構。
+      b.dead=true;
+    }
+  }
+  bullets=bullets.filter(b=>!b.dead&&b.life>0&&b.y>-90&&b.y<H+90&&b.x>-90&&b.x<W+90);
+
+  // enemy bullets
+  for(const b of enemyBullets){
+    b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt;
+    if(!b.dead&&circleHit(b,player,-5)){b.dead=true;hitPlayer(1);}
+  }
+  enemyBullets=enemyBullets.filter(b=>!b.dead&&b.life>0&&b.x>-70&&b.x<W+70&&b.y>-70&&b.y<H+70);
+
+  // pickups
+  for(const p of pickups){
+    p.y+=p.vy*dt;p.life-=dt;
+    if(circleHit(p,player,10)){
+      p.dead=true;player.hp=Math.min(player.maxHp,player.hp+1);burst(p.x,p.y,16,'heal');tone(680,.12,'sine',.025,340);
+    }
+  }
+  pickups=pickups.filter(p=>!p.dead&&p.life>0&&p.y<H+30);
+
+  // particles
+  for(const p of particles){
+    p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=Math.pow(.25,dt);p.vy*=Math.pow(.36,dt);p.rot+=p.vr*dt;
+  }
+  particles=particles.filter(p=>p.life>0);
+  for(const l of lightning)l.life-=dt;
+  lightning=lightning.filter(l=>l.life>0);
+
+  // 長時間遊玩保險：只裁掉最舊的過量物件，不影響最新火力與眼前戰況。
+  if(bullets.length>PERF_LIMITS.bullets)bullets.splice(0,bullets.length-PERF_LIMITS.bullets);
+  if(enemyBullets.length>PERF_LIMITS.enemyBullets)enemyBullets.splice(0,enemyBullets.length-PERF_LIMITS.enemyBullets);
+  if(particles.length>PERF_LIMITS.particles)particles.splice(0,particles.length-PERF_LIMITS.particles);
+  if(lightning.length>PERF_LIMITS.lightning)lightning.splice(0,lightning.length-PERF_LIMITS.lightning);
+  if(pickups.length>PERF_LIMITS.pickups)pickups.splice(0,pickups.length-PERF_LIMITS.pickups);
+
+  if(game.comboTimer>0){game.comboTimer-=dt;if(game.comboTimer<=0)game.combo=0;}
+
+  updateUI();
+}
+
+function updateUI(){
+  const hpNow=Math.max(0,Math.ceil(player.hp));
+  const hpMax=Math.max(1,Math.ceil(player.maxHp));
+  ui.hpText.textContent=`LIFE ×${hpNow}`;
+  if(ui.hpIcons.children.length!==hpMax){
+    ui.hpIcons.innerHTML='';
+    for(let i=0;i<hpMax;i++){
+      const icon=document.createElement('span');
+      icon.className='hpIcon';
+      icon.setAttribute('aria-hidden','true');
+      ui.hpIcons.appendChild(icon);
+    }
+  }
+  [...ui.hpIcons.children].forEach((icon,i)=>{
+    const alive=i<hpNow;
+    icon.classList.toggle('on',alive);
+    icon.classList.toggle('lost',!alive);
+  });
+  ui.hpIcons.setAttribute('aria-label',`生命值 ${hpNow} / ${hpMax}`);
+  const shieldOn=player.upgrades.shield>0;
+  ui.shieldBadge.classList.toggle('active',shieldOn);
+  ui.shieldBadge.textContent=shieldOn?'⬡ SHIELD ×1':'⬡ SHIELD';
+  ui.shieldBadge.setAttribute('aria-label',shieldOn?'防護罩 1 層':'防護罩未啟動');
+  ui.level.textContent=`LV.${player.level}`;
+  const xpPct=player.xp/player.xpNeed*100;
+  ui.xpFill.style.width=xpPct+'%';
+  ui.xpText.lastElementChild.textContent=`${Math.floor(player.xp)} / ${player.xpNeed}`;
+  const up=player.ult/player.ultMax*100;
+  ui.ultFill.style.width=up+'%';
+  ui.ultText.lastElementChild.textContent=up>=100?'READY / R':`${Math.floor(up)}%`;
+  ui.ultWrap.classList.toggle('ready',up>=100);
+  ui.stage.textContent=String(game.stage).padStart(2,'0');
+  ui.enemies.textContent=String(boss&&boss.phase==='fighter'?1:enemies.length+(boss?1:0));
+  const u=player.upgrades;
+  const power=1+u.damage*.20+u.spread*.08+u.pierce*.06+u.drones*.25+u.fireRate*.12+u.explosive*.25+u.subgun*.16+u.subDamage*.08+u.subRate*.05;
+  ui.power.textContent=power.toFixed(1)+'×';
+  ui.score.textContent=String(Math.floor(game.score)).padStart(8,'0');
+
+  const active=[];
+  const labels={damage:'彈傷',spread:'散彈',pierce:'穿透',drones:'子艦',armor:'裝甲',speed:'速度',radar:'雷達',explosive:'爆裂',fireRate:'射速',shield:'護盾',subgun:'副砲',subDamage:'副砲威力',subRate:'副砲射速',exp:'經驗×',ultGain:'蓄力×'};
+  for(const [k,v] of Object.entries(u)){
+    if(!v)continue;
+    if(k==='exp') active.push(`經驗 ×${Math.pow(2,v)}`);
+    else if(k==='ultGain') active.push('蓄力 ×2');
+    else if(k==='radar'||k==='explosive'||k==='shield'||k==='subgun')active.push(labels[k]+' ON');
+    else active.push(`${labels[k]} LV${v}`);
+  }
+  ui.buildList.textContent=active.length?active.join(' · '):'尚未取得強化';
+  ui.comboN.textContent='x'+game.combo;
+  ui.combo.classList.toggle('show',game.combo>=3);
+  if(boss){
+    const p=clamp(fortressIntegrity()*100,0,100);
+    ui.bossFill.style.width=p+'%';
+    if(boss.phase==='fighter'){
+      ui.bossHp.textContent=`DAMAGED HP · ${Math.ceil(p)}%`;
+    }else{
+      const rem=fortressOuterRemaining();
+      ui.bossHp.textContent=`WEAK ${4-rem}/4`;
+    }
+  }
+  if(game.stageState==='wave'){
+    ui.objective.textContent=`擊墜 ${Math.min(game.stageKills,game.quota)} / ${game.quota}`;
+    ui.detail.textContent=game.stage<=25?'敵彈可被主砲摧毀 · 保持火力':'26+ OVERDRIVE：敵彈耐久與密度上升';
+  }else if(game.stageState==='bossWarning'){
+    ui.objective.textContent='FORTRESS AHEAD';
+    ui.detail.textContent='箭矢警告：大型基地即將進入戰區';
+  }else if(game.stageState==='boss'){
+    if(boss && boss.phase==='fighter'){
+      ui.objective.textContent='FINAL DUEL';
+      ui.detail.textContent='基地殘存戰鬥機 · 已嚴重受損，壓制它的最後掙扎';
+    }else{
+      const rem=fortressOuterRemaining();
+      ui.objective.textContent=`破壞弱點 ${4-rem} / 4`;
+      ui.detail.textContent='弱點位於基地最前緣 · 灰色裝甲完全無效';
+    }
+  }else{
+    ui.objective.textContent='戰區轉移中';
+    ui.detail.textContent='整備武裝 · 下一波即將進場';
+  }
+}
+
+function draw(){
+  const sh=game.shake;
+  const sx=sh?rand(-sh,sh):0, sy=sh?rand(-sh,sh):0;
+  ctx.save();ctx.translate(sx,sy);
+
+  drawBackground();
+  drawWorld();
+
+  ctx.restore();
+
+  if(game.stageState==='bossWarning')drawBossWarning();
+
+  if(game.flash>0){
+    ctx.fillStyle=`rgba(190,235,255,${game.flash*.48})`;
+    ctx.fillRect(0,0,W,H);
+  }
+}
+
+function drawBackground(){
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#06142d');g.addColorStop(.55,'#030817');g.addColorStop(1,'#01030a');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+
+  // nebula
+  ctx.save();
+  ctx.globalCompositeOperation='screen';
+  let rg=ctx.createRadialGradient(W*.26,H*.3,20,W*.26,H*.3,430);
+  rg.addColorStop(0,'rgba(45,91,200,.18)');rg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=rg;ctx.fillRect(0,0,W,H);
+  rg=ctx.createRadialGradient(W*.8,H*.55,30,W*.8,H*.55,500);
+  rg.addColorStop(0,'rgba(94,38,174,.13)');rg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=rg;ctx.fillRect(0,0,W,H);
+  ctx.restore();
+
+  for(const s of stars){
+    ctx.globalAlpha=.25+.7*s.z;
+    ctx.fillStyle=s.z>.72?'#b9f3ff':'#6e9ec9';
+    ctx.fillRect(s.x,s.y,s.s,s.s*(2+s.z*3));
+  }
+  ctx.globalAlpha=1;
+
+  // speed lanes
+  ctx.strokeStyle='rgba(90,159,255,.055)';ctx.lineWidth=1;
+  for(let i=0;i<15;i++){
+    const x=(i/14)*W;
+    ctx.beginPath();ctx.moveTo(W/2+(x-W/2)*.12,0);ctx.lineTo(x,H);ctx.stroke();
+  }
+}
+
+function drawBossWarning(){
+  const t=game.time;
+  ctx.save();
+
+  // 不用巨大遮罩，改成紅白機風格的方向箭矢，讓玩家知道「前方有大型基地」。
+  const center=W/2;
+  const pulse=.58+Math.sin(t*9)*.28;
+  ctx.textAlign='center';
+  ctx.font='900 28px Segoe UI, Arial';
+  ctx.fillStyle=`rgba(255,216,216,${.72+pulse*.22})`;
+  ctx.fillText('FORTRESS AHEAD',center,112);
+
+  const rows=3;
+  for(let row=0;row<rows;row++){
+    const y=148+row*45;
+    const scale=1+row*.16;
+    for(let i=-3;i<=3;i++){
+      const x=center+i*86;
+      const alt=(i+row+Math.floor(t*6))&1;
+      ctx.globalAlpha=.45+pulse*.45;
+      ctx.fillStyle=alt?'#e8f5f2':'#e04d55';
+      ctx.beginPath();
+      ctx.moveTo(x,y-19*scale);
+      ctx.lineTo(x-14*scale,y+10*scale);
+      ctx.lineTo(x-5*scale,y+10*scale);
+      ctx.lineTo(x,y);
+      ctx.lineTo(x+5*scale,y+10*scale);
+      ctx.lineTo(x+14*scale,y+10*scale);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // 左右側也給接近方向感，但保持中央戰鬥視野乾淨。
+  ctx.globalAlpha=.55+pulse*.25;
+  ctx.strokeStyle='#d84d59';
+  ctx.lineWidth=5;
+  for(const side of [-1,1]){
+    const x=center+side*430;
+    ctx.beginPath();
+    ctx.moveTo(x-22,190);ctx.lineTo(x,164);ctx.lineTo(x+22,190);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawWorld(){
+  for(const t of player.trail){
+    if(t.life<=0)continue;
+    const a=t.life/.35;
+    const grd=ctx.createRadialGradient(t.x,t.y,0,t.x,t.y,34*a);
+    grd.addColorStop(0,`rgba(93,222,255,${a*.55})`);grd.addColorStop(1,'rgba(48,81,255,0)');
+    ctx.fillStyle=grd;ctx.beginPath();ctx.arc(t.x,t.y,34*a,0,Math.PI*2);ctx.fill();
+  }
+
+  if(player.upgrades.radar) drawRadar();
+  for(const p of pickups) drawPickup(p);
+  for(const e of enemies) drawEnemy(e);
+  if(boss) drawBoss(boss);
+
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  for(const b of bullets) drawPlayerBullet(b);
+  for(const b of enemyBullets) drawEnemyBullet(b);
+  ctx.restore();
+
+  drawDrones();
+  drawPlayer(player);
+
+  for(const p of particles) drawParticle(p);
+  for(const l of lightning) drawLightning(l);
+}
+
+function drawDrones(){
+  const ds=dronePositions();
+  for(const d of ds){
+    ctx.save();
+    ctx.translate(d.x,d.y);
+    ctx.rotate(d.heading||0);
+
+    ctx.shadowColor='rgba(89,188,209,.38)';
+    ctx.shadowBlur=10;
+
+    // 無敵子艦用一圈很淡的護盾環表示，但不使用刺眼高亮。
+    ctx.strokeStyle='rgba(111,213,224,.30)';
+    ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(0,0,24,0,Math.PI*2);ctx.stroke();
+
+    const g=ctx.createLinearGradient(-18,0,18,0);
+    g.addColorStop(0,'#153a63');
+    g.addColorStop(.5,'#baf7ff');
+    g.addColorStop(1,'#153a63');
+    ctx.fillStyle=g;
+    ctx.strokeStyle='#7dcbd8';
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(0,-20);ctx.lineTo(18,12);ctx.lineTo(7,9);ctx.lineTo(0,20);
+    ctx.lineTo(-7,9);ctx.lineTo(-18,12);ctx.closePath();
+    ctx.fill();ctx.stroke();
+
+    ctx.restore();
+  }
+}
+
+function drawRadar(){
+  const marks=enemies.filter(e=>e.y<90);
+  if(boss && boss.y<90) marks.push(boss);
+  ctx.save();
+  for(const e of marks){
+    const x=clamp(e.x,60,W-60), y=170;
+    const pulse=.65+Math.sin(game.time*7+e.x*.01)*.25;
+    ctx.globalAlpha=pulse;
+    ctx.fillStyle=e===boss?'#ff7b92':'#75eaff';
+    ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=14;
+    ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x-12,y-20);ctx.lineTo(x+12,y-20);ctx.closePath();ctx.fill();
+    ctx.font='700 12px Segoe UI';ctx.textAlign='center';
+    ctx.fillText('INCOMING',x,y+18);
+  }
+  ctx.restore();
+}
+
+function drawPlayer(p){
+  ctx.save();ctx.translate(p.x,p.y);
+
+  if(p.upgrades.shield>0){
+    ctx.save();
+    ctx.globalAlpha=.72;
+    ctx.strokeStyle='rgba(108,201,214,.58)';
+    ctx.lineWidth=3;
+    ctx.beginPath();ctx.arc(0,0,52,0,Math.PI*2);ctx.stroke();
+    ctx.globalAlpha=.12;
+    ctx.fillStyle='#78cbd8';
+    ctx.beginPath();ctx.arc(0,0,50,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
+  if(p.inv>0 && Math.floor(p.inv*18)%2===0)ctx.globalAlpha=.35;
+
+  // engine glow
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  let g=ctx.createRadialGradient(0,30,0,0,42,55);
+  g.addColorStop(0,'rgba(113,238,255,.9)');g.addColorStop(.35,'rgba(69,122,255,.55)');g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,40,55,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+
+  // wings
+  g=ctx.createLinearGradient(-55,0,55,0);
+  g.addColorStop(0,'#1b3e6f');g.addColorStop(.5,'#7fdfff');g.addColorStop(1,'#1b3e6f');
+  ctx.fillStyle=g;ctx.strokeStyle='#bcefff';ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(0,-50);ctx.lineTo(22,-12);ctx.lineTo(68,20);ctx.lineTo(36,27);ctx.lineTo(19,18);
+  ctx.lineTo(13,54);ctx.lineTo(-13,54);ctx.lineTo(-19,18);ctx.lineTo(-36,27);ctx.lineTo(-68,20);ctx.lineTo(-22,-12);ctx.closePath();
+  ctx.fill();ctx.stroke();
+
+  // nose
+  ctx.fillStyle='#ecfbff';ctx.beginPath();ctx.moveTo(0,-58);ctx.lineTo(14,12);ctx.lineTo(0,24);ctx.lineTo(-14,12);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#59bfff';ctx.beginPath();ctx.ellipse(0,-12,7,20,0,0,Math.PI*2);ctx.fill();
+
+  if(p.upgrades.subgun>0){
+    ctx.save();
+    ctx.fillStyle='#283d51';ctx.strokeStyle='#b6d8df';ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(0,11,9,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#d5edf0';ctx.fillRect(-2,5,4,13);
+    ctx.restore();
+  }
+
+  // hitbox when slow
+  if(keys.has('ShiftLeft')||keys.has('ShiftRight')){
+    ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.globalAlpha=.9;
+    ctx.beginPath();ctx.arc(0,0,5.5,0,Math.PI*2);ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+  ctx.restore();
+}
+
+function drawEnemy(e){
+  ctx.save();ctx.translate(e.x,e.y);
+  const elite=e.elite;
+  if(elite){ctx.shadowColor='#ff8e62';ctx.shadowBlur=22;}
+  ctx.rotate(Math.sin(e.age*2+e.seed)*.08);
+
+  const g=ctx.createLinearGradient(-45,0,45,0);
+  if(elite){g.addColorStop(0,'#6d2542');g.addColorStop(.5,'#ffb45a');g.addColorStop(1,'#6d2542');}
+  else{g.addColorStop(0,'#253553');g.addColorStop(.5,'#d3e4f4');g.addColorStop(1,'#253553');}
+  ctx.fillStyle=g;ctx.strokeStyle=elite?'#ffd1a3':'#83a9c7';ctx.lineWidth=2;
+  const r=e.r;
+  ctx.beginPath();
+  ctx.moveTo(0,r*.9);ctx.lineTo(r*.25,r*.2);ctx.lineTo(r*1.35,-r*.25);ctx.lineTo(r*.42,-r*.45);
+  ctx.lineTo(0,-r);ctx.lineTo(-r*.42,-r*.45);ctx.lineTo(-r*1.35,-r*.25);ctx.lineTo(-r*.25,r*.2);ctx.closePath();
+  ctx.fill();ctx.stroke();
+  ctx.fillStyle=elite?'#ff654e':'#ff4969';ctx.beginPath();ctx.ellipse(0,-r*.25,r*.18,r*.32,0,0,Math.PI*2);ctx.fill();
+
+  if(e.type==='tank'){
+    ctx.fillStyle='#18253a';ctx.fillRect(-r*.85,-8,r*1.7,18);
+    ctx.strokeStyle='#ffbd6d';ctx.strokeRect(-r*.85,-8,r*1.7,18);
+  }
+
+  if(elite||e.type==='tank'){
+    const pct=clamp(e.hp/e.maxHp,0,1);
+    ctx.fillStyle='rgba(0,0,0,.55)';ctx.fillRect(-42,r+16,84,7);
+    ctx.fillStyle=elite?'#ff9a5d':'#76d9ff';ctx.fillRect(-42,r+16,84*pct,7);
+  }
+  ctx.restore();
+}
+
+function drawBoss(b){
+  if(b.phase==='fighter'){
+    ctx.save();
+    ctx.translate(b.x,b.y);
+    ctx.rotate(b.fighterAngle||0);
+
+    ctx.shadowColor='rgba(255,84,92,.32)';
+    ctx.shadowBlur=18;
+
+    const g=ctx.createLinearGradient(-130,0,130,0);
+    g.addColorStop(0,'#283445');
+    g.addColorStop(.38,'#8d3548');
+    g.addColorStop(.5,'#d7a566');
+    g.addColorStop(.62,'#8d3548');
+    g.addColorStop(1,'#283445');
+    ctx.fillStyle=g;
+    ctx.strokeStyle='#bd7b7e';
+    ctx.lineWidth=4;
+
+    // 大型戰鬥機，不再是基地本體球。
+    ctx.beginPath();
+    ctx.moveTo(0,-112);
+    ctx.lineTo(32,-48);
+    ctx.lineTo(142,-4);
+    ctx.lineTo(92,32);
+    ctx.lineTo(54,24);
+    ctx.lineTo(42,95);
+    ctx.lineTo(0,66);
+    ctx.lineTo(-42,95);
+    ctx.lineTo(-54,24);
+    ctx.lineTo(-92,32);
+    ctx.lineTo(-142,-4);
+    ctx.lineTo(-32,-48);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle='#202a36';
+    ctx.beginPath();ctx.ellipse(0,-22,25,47,0,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#f1c887';ctx.lineWidth=3;ctx.stroke();
+
+    ctx.fillStyle='#c94b55';
+    ctx.beginPath();ctx.arc(0,-28,12,0,Math.PI*2);ctx.fill();
+
+    // 機體下方再顯示一條小型專屬 HP，讓玩家直接知道本體正在掉血。
+    const hpRatio=clamp(b.fighterHp/b.fighterMaxHp,0,1);
+    ctx.fillStyle='rgba(0,0,0,.58)';
+    ctx.fillRect(-92,116,184,10);
+    ctx.strokeStyle='rgba(255,255,255,.20)';
+    ctx.lineWidth=2;
+    ctx.strokeRect(-92,116,184,10);
+    ctx.fillStyle='#c85b62';
+    ctx.fillRect(-90,118,180*hpRatio,6);
+
+    // 雙引擎
+    ctx.fillStyle='#6db6c1';
+    ctx.globalAlpha=.78;
+    ctx.beginPath();ctx.ellipse(-31,77,10,26,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(31,77,10,26,0,0,Math.PI*2);ctx.fill();
+
+    ctx.restore();
+    return;
+  }
+
+  ctx.save();
+  ctx.translate(b.x,b.y);
+
+  const hardFill='#263041';
+  const hardEdge='#63758a';
+  const panel='#17202d';
+
+  // 四種基地的中央輪廓
+  ctx.fillStyle=panel;
+  ctx.strokeStyle='#53687c';
+  ctx.lineWidth=4;
+
+  if(b.fortressType==='bastion'){
+    ctx.beginPath();
+    ctx.moveTo(-190,-82);ctx.lineTo(190,-82);ctx.lineTo(146,124);ctx.lineTo(-146,124);ctx.closePath();
+    ctx.fill();ctx.stroke();
+  }else if(b.fortressType==='arrow'){
+    ctx.beginPath();
+    ctx.moveTo(0,-158);ctx.lineTo(208,-20);ctx.lineTo(126,132);ctx.lineTo(-126,132);ctx.lineTo(-208,-20);ctx.closePath();
+    ctx.fill();ctx.stroke();
+  }else if(b.fortressType==='twin'){
+    ctx.fillRect(-178,-110,142,238);
+    ctx.strokeRect(-178,-110,142,238);
+    ctx.fillRect(36,-110,142,238);
+    ctx.strokeRect(36,-110,142,238);
+    ctx.fillRect(-78,18,156,114);
+    ctx.strokeRect(-78,18,156,114);
+  }else{
+    ctx.beginPath();
+    ctx.arc(0,0,158,0,Math.PI*2);
+    ctx.fill();ctx.stroke();
+    ctx.fillStyle='#07101c';
+    ctx.beginPath();ctx.arc(0,0,72,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#53687c';ctx.stroke();
+  }
+
+  // 硬裝甲分區
+  for(const seg of b.segments){
+    if(seg.destroyed)continue;
+
+    ctx.save();
+    ctx.translate(seg.x,seg.y);
+    const sg=ctx.createLinearGradient(0,0,seg.w,seg.h);
+    sg.addColorStop(0,'#3a4658');
+    sg.addColorStop(.45,'#1c2634');
+    sg.addColorStop(1,'#303b4e');
+    ctx.fillStyle=sg;
+    ctx.strokeStyle=hardEdge;
+    ctx.lineWidth=4;
+
+    if(b.fortressType==='ring'){
+      ctx.beginPath();
+      ctx.roundRect(0,0,seg.w,seg.h,24);
+      ctx.fill();ctx.stroke();
+    }else{
+      ctx.fillRect(0,0,seg.w,seg.h);
+      ctx.strokeRect(0,0,seg.w,seg.h);
+    }
+
+    ctx.strokeStyle='rgba(140,163,184,.26)';
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(14,18);ctx.lineTo(seg.w-14,seg.h-18);
+    ctx.moveTo(seg.w-14,18);ctx.lineTo(14,seg.h-18);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(seg.turretX,seg.turretY);
+    ctx.fillStyle='#101721';
+    ctx.strokeStyle='#8a9aae';
+    ctx.lineWidth=3;
+    ctx.beginPath();ctx.arc(0,0,15,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#9c4050';
+    ctx.fillRect(-5,5,10,23);
+    ctx.restore();
+  }
+
+  // 前緣支架與弱點
+  ctx.save();
+  ctx.strokeStyle='rgba(107,126,145,.72)';
+  ctx.lineWidth=9;
+  ctx.lineCap='round';
+  for(const w of b.weakpoints.filter(w=>!w.destroyed)){
+    ctx.beginPath();
+    ctx.moveTo(w.x,112);
+    ctx.lineTo(w.x,w.y-22);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  for(const w of b.weakpoints){
+    if(w.destroyed)continue;
+    const ratio=clamp(w.hp/w.maxHp,0,1);
+    const pulse=.78+Math.sin(b.age*5+w.x*.02)*.16;
+
+    ctx.save();
+    ctx.translate(w.x,w.y);
+    ctx.shadowColor='rgba(255,184,76,.45)';
+    ctx.shadowBlur=15;
+    ctx.fillStyle=`rgba(224,146,55,${pulse})`;
+    ctx.beginPath();ctx.arc(0,0,w.r,0,Math.PI*2);ctx.fill();
+
+    ctx.strokeStyle='#ffe2a4';
+    ctx.lineWidth=4;
+    ctx.beginPath();ctx.arc(0,0,w.r*.72,0,Math.PI*2);ctx.stroke();
+
+    ctx.fillStyle='#fff4d2';
+    ctx.beginPath();ctx.arc(0,0,8,0,Math.PI*2);ctx.fill();
+
+    ctx.strokeStyle='rgba(255,255,255,.18)';
+    ctx.lineWidth=4;
+    ctx.beginPath();ctx.arc(0,0,w.r+9,-Math.PI/2,Math.PI*1.5);ctx.stroke();
+    ctx.strokeStyle='#ffc46f';
+    ctx.beginPath();ctx.arc(0,0,w.r+9,-Math.PI/2,-Math.PI/2+Math.PI*2*ratio);ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawPlayerBullet(b){
+  if(b.subgun){
+    ctx.save();
+    ctx.globalCompositeOperation='source-over';
+    ctx.shadowColor='rgba(223,174,89,.35)';
+    ctx.shadowBlur=5;
+    ctx.fillStyle='#e4c786';
+    ctx.beginPath();ctx.arc(b.x,b.y,4.2,0,Math.PI*2);ctx.fill();
+    const len=Math.hypot(b.vx,b.vy)||1;
+    ctx.strokeStyle='rgba(203,161,85,.46)';
+    ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x-b.vx/len*13,b.y-b.vy/len*13);ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  if(b.explosive){
+    ctx.shadowColor='#ffb25e';ctx.shadowBlur=24;
+    ctx.fillStyle='#fff1a8';ctx.beginPath();ctx.arc(b.x,b.y,10,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#ff7b55';ctx.lineWidth=4;ctx.beginPath();ctx.arc(b.x,b.y,15,0,Math.PI*2);ctx.stroke();
+    return;
+  }
+  if(b.laser){
+    ctx.save();
+    ctx.globalCompositeOperation='source-over';
+    ctx.shadowColor='rgba(64,171,196,.45)';
+    ctx.shadowBlur=8;
+    const g=ctx.createLinearGradient(b.x,b.y-56,b.x,b.y+14);
+    g.addColorStop(0,'rgba(91,196,210,.18)');
+    g.addColorStop(.28,'rgba(67,174,193,.72)');
+    g.addColorStop(.72,'rgba(35,122,153,.82)');
+    g.addColorStop(1,'rgba(23,77,121,.16)');
+    ctx.fillStyle=g;
+    ctx.fillRect(b.x-3,b.y-56,6,70);
+    ctx.shadowBlur=3;
+    ctx.fillStyle='rgba(167,225,228,.62)';
+    ctx.fillRect(b.x-1.25,b.y-48,2.5,58);
+    ctx.restore();
+    return;
+  }
+  ctx.shadowColor='#6ef0ff';ctx.shadowBlur=14;
+  ctx.fillStyle='#eaffff';
+  ctx.beginPath();ctx.roundRect(b.x-3,b.y-18,6,34,4);ctx.fill();
+  ctx.fillStyle='rgba(68,168,255,.55)';ctx.fillRect(b.x-7,b.y-8,14,22);
+}
+
+function drawEnemyBullet(b){
+  ctx.shadowColor=b.boss?'#ff5b85':'#ff945d';ctx.shadowBlur=15;
+  ctx.fillStyle=b.hp>1?'#fff0a8':(b.boss?'#ff5d88':'#ff9b61');
+  ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.8)';ctx.beginPath();ctx.arc(b.x-b.r*.22,b.y-b.r*.22,b.r*.28,0,Math.PI*2);ctx.fill();
+}
+
+function drawPickup(p){
+  ctx.save();ctx.translate(p.x,p.y);ctx.rotate(game.time*2.5);
+  ctx.shadowColor='#79ffb3';ctx.shadowBlur=20;ctx.strokeStyle='#98ffc2';ctx.lineWidth=4;
+  ctx.strokeRect(-13,-13,26,26);ctx.rotate(-game.time*5);
+  ctx.fillStyle='#dffff0';ctx.fillRect(-4,-10,8,20);ctx.fillRect(-10,-4,20,8);ctx.restore();
+}
+
+function drawParticle(p){
+  const a=clamp(p.life/p.max,0,1);
+  ctx.save();ctx.globalAlpha=a;ctx.translate(p.x,p.y);ctx.rotate(p.rot);
+  if(p.type==='level'||p.type==='ult'){ctx.fillStyle='#8beeff';ctx.shadowColor='#89eaff';ctx.shadowBlur=16;}
+  else if(p.type==='heal'){ctx.fillStyle='#81ffb8';}
+  else if(p.type==='hurt'){ctx.fillStyle='#ff5f7d';}
+  else if(p.type==='muzzle'||p.type==='hit'||p.type==='spark'){ctx.fillStyle='#dffaff';}
+  else if(p.type==='elite'||p.type==='boss'){ctx.fillStyle='#ff9b61';ctx.shadowColor='#ff4f72';ctx.shadowBlur=12;}
+  else ctx.fillStyle='#ffcf6d';
+  ctx.fillRect(-p.size/2,-p.size/2,p.size,p.size*1.8);
+  ctx.restore();
+}
+
+function drawLightning(l){
+  const a=clamp(l.life/l.max,0,1);
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.strokeStyle=`rgba(132,211,255,${a*.45})`;ctx.lineWidth=l.width*4;ctx.shadowColor='#5edbff';ctx.shadowBlur=25;
+  pathBolt(l);ctx.stroke();
+  ctx.strokeStyle=`rgba(255,255,255,${a})`;ctx.lineWidth=l.width;ctx.shadowBlur=8;
+  pathBolt(l);ctx.stroke();ctx.restore();
+}
+function pathBolt(l){
+  ctx.beginPath();ctx.moveTo(l.pts[0].x,l.pts[0].y);
+  for(let i=1;i<l.pts.length;i++)ctx.lineTo(l.pts[i].x,l.pts[i].y);
+}
+
+function loop(ts){
+  const dt=Math.min(.033,(ts-last)/1000||0);last=ts;
+  update(dt);draw();requestAnimationFrame(loop);
+}
+
+function start(){
+  resetGame();game.running=true;ui.start.classList.add('hidden');ui.over.classList.add('hidden');ui.pause.classList.add('hidden');ui.upgrade.classList.add('hidden');
+  initAudio();announce('SORTIE!','升級時選強化 · 打出自己的火力流派',1100);
+}
+function togglePause(){
+  if(!game.running||game.over||game.upgrading)return;
+  game.paused=!game.paused;
+  ui.pause.classList.toggle('hidden',!game.paused);
+}
+function resume(){game.paused=false;ui.pause.classList.add('hidden')}
+
+addEventListener('keydown',e=>{
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();
+  keys.add(e.code);
+  if(game?.upgrading && !e.repeat){
+    if(e.code==='Digit1'||e.code==='Numpad1')chooseUpgrade(0);
+    if(e.code==='Digit2'||e.code==='Numpad2')chooseUpgrade(1);
+    if(e.code==='Digit3'||e.code==='Numpad3')chooseUpgrade(2);
+    return;
+  }
+  if(e.code==='KeyR'&&!e.repeat)useUltimate();
+  if(e.code==='KeyP'&&!e.repeat)togglePause();
+  if(e.code==='Enter'&&!e.repeat){
+    if(!ui.start.classList.contains('hidden')||!ui.over.classList.contains('hidden'))start();
+  }
+});
+addEventListener('keyup',e=>keys.delete(e.code));
+addEventListener('blur',()=>{keys.clear(); if(game?.running&&!game.paused){game.paused=true;ui.pause.classList.remove('hidden')}});
+
+$('startBtn').onclick=start;
+$('retryBtn').onclick=start;
+$('resumeBtn').onclick=resume;
+ui.sound.onclick=()=>{
+  audioEnabled=!audioEnabled;
+  ui.sound.textContent='SOUND: '+(audioEnabled?'ON':'OFF');
+  if(audioEnabled)initAudio();
+};
+
+resetGame();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
