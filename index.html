@@ -275,7 +275,7 @@
         <div class="subtitle">2D OVERDRIVE SHOOTER</div>
 
         <div class="featureGrid">
-          <div class="feature"><b>四型基地戰</b><span>每關基地輪替不同結構；拆掉前緣弱點後，真正的大型戰鬥機會脫離基地決戰。</span></div>
+          <div class="feature"><b>漸進敵海</b><span>第10關開始敵軍逐步增援，第20關正式進入大量敵機湧入的 SWARM ZONE。</span></div>
           <div class="feature"><b>多層火力 BUILD</b><span>可抽追擊子艦、單層護盾與 360° 自動副砲；LV11 起每次三選一。</span></div>
           <div class="feature"><b>25 關後開殺</b><span>前 25 關主打割草爽感，第 26 關起敵人速度、密度與彈幕全面提升。</span></div>
         </div>
@@ -390,18 +390,20 @@ function resetGame(){
     kills:0, stageKills:0, quota:18, spawnTimer:0, stageState:'wave',
     bossDelay:0, transition:0, transitionAge:0, shake:0, flash:0, time:0,
     combo:0, comboTimer:0, maxCombo:0, destroyedBullets:0,
-    upgrading:false, pendingUpgrades:0, currentChoices:[], deferredUpgradeTimer:0
+    upgrading:false, pendingUpgrades:0, currentChoices:[], deferredUpgradeTimer:0,
+    hiddenBossPending:false, hiddenBossTimer:-1, hiddenBossActive:false, hiddenBossSpawned:false,
+    rearTimer:-1,rearWarned:false,suppressUltGain:false
   };
   player = {
     x:W/2, y:H-160, r:30, hp:5, maxHp:5, speed:640,
-    level:1, xp:0, xpNeed:100, ult:0, ultMax:100,
-    fireCd:0, bombCd:0, subCd:0, inv:0, trail:[], hitPulse:0,
+    level:1, xp:0, xpNeed:100, ult:0, ultMax:100, ultCooldown:0,
+    fireCd:0, bombCd:0, subCd:0, missileSeq:0, inv:0, trail:[], hitPulse:0,
     droneUnits:[],
     upgrades:{
       damage:0, spread:0, pierce:0, drones:0, armor:0, speed:0,
       radar:0, explosive:0, fireRate:0,
       shield:0, subgun:0, subDamage:0, subRate:0,
-      exp:0, ultGain:0
+      exp:0
     }
   };
   bullets=[]; enemies=[]; enemyBullets=[]; particles=[]; pickups=[]; lightning=[]; boss=null;
@@ -415,12 +417,26 @@ function resetGame(){
 function setupStage(n, silent=false){
   game.stage=n;
   game.stageKills=0;
-  game.quota = Math.floor(14 + n*3.1 + Math.min(player.level*1.2,24));
+  game.quota=n<10
+    ? Math.floor(14+n*3.0+Math.min(player.level*.8,12))
+    : n<20
+      ? Math.floor(44+(n-10)*6.5+Math.min(player.level*.9,22))
+      : Math.floor(110+(n-20)*18+Math.min(player.level*1.0,48));
   game.stageState='wave';
   game.spawnTimer=.7;
   game.transition=0;
   game.transitionAge=0;
   game.deferredUpgradeTimer=game.pendingUpgrades>0?.45:0;
+
+  // 每一關只擲一次真正的 1% 隱藏遭遇，不會因為後期大量生成敵人而提高機率。
+  game.hiddenBossPending=Math.random()<.01;
+  game.hiddenBossTimer=game.hiddenBossPending?rand(5.5,11.5):-1;
+  game.hiddenBossActive=false;
+  game.hiddenBossSpawned=false;
+
+  game.rearTimer=n>=25?rand(3.8,6.5):-1;
+  game.rearWarned=false;
+
   boss=null;
   game.upgrading=false;
   ui.upgrade.classList.add('hidden');
@@ -430,7 +446,16 @@ function setupStage(n, silent=false){
   pickups.length=0;
   lightning.length=0;
   ui.boss.classList.remove('show');
-  if(!silent) announce(`STAGE ${String(n).padStart(2,'0')}`, n<=25 ? '火力全開 · 持續壓制' : 'OVERDRIVE ZONE · 威脅急升', 1500);
+  if(!silent){
+    const sub=n===20
+      ? 'SWARM ZONE · 敵機數量開始暴增'
+      : n>20
+        ? `ENEMY SWARM · 擊墜目標 ${game.quota}`
+        : n>=10
+          ? 'REINFORCEMENTS · 敵軍增援逐步增加'
+          : '火力全開 · 持續壓制';
+    announce(`STAGE ${String(n).padStart(2,'0')}`,sub,1500);
+  }
 }
 
 function announce(big,sub='',ms=1200){
@@ -441,30 +466,60 @@ function announce(big,sub='',ms=1200){
 
 function stageDifficulty(){
   const s=game.stage;
-  if(s<=25) return {
-    enemySpeed: 110+s*4.3,
-    bulletSpeed: 185+s*3.2,
-    fireRate: Math.max(1.7,3.1-s*.045),
-    maxEnemies: 5+Math.floor(s/3)+Math.floor(player.level/4),
+
+  // 1～9 關：前期維持舒適割草節奏。
+  if(s<10)return {
+    enemySpeed:110+s*4.0,
+    bulletSpeed:185+s*3.0,
+    fireRate:Math.max(2.15,3.05-s*.05),
+    maxEnemies:5+Math.floor(s/2),
     bulletHp:1,
     dmg:5
   };
+
+  // 10～19 關：敵軍開始逐步增兵。
+  if(s<20){
+    const o=s-10;
+    return {
+      enemySpeed:150+o*6.5,
+      bulletSpeed:215+o*5.0,
+      fireRate:Math.max(1.62,2.35-o*.06),
+      maxEnemies:Math.min(28,12+o*2),
+      bulletHp:1,
+      dmg:5
+    };
+  }
+
+  // 20～25 關：正式進入敵海區。
+  if(s<=25){
+    const o=s-20;
+    return {
+      enemySpeed:205+o*9,
+      bulletSpeed:250+o*8,
+      fireRate:Math.max(1.55,2.05-o*.07),
+      maxEnemies:Math.min(66,36+o*6+Math.floor(player.level/12)),
+      bulletHp:1,
+      dmg:5
+    };
+  }
+
+  // 26 關後：敵機海持續擴張，但仍控制敵彈密度。
   const o=s-25;
   return {
-    enemySpeed: 230+o*10,
-    bulletSpeed: 300+o*13,
-    fireRate: Math.max(.48,1.45-o*.045),
-    maxEnemies: Math.min(30,14+Math.floor(o*.75)+Math.floor(player.level/4)),
-    bulletHp: 1+Math.floor(o/8),
-    dmg:7+Math.floor(o/6)
+    enemySpeed:245+o*8,
+    bulletSpeed:292+o*10,
+    fireRate:Math.max(.82,1.72-o*.025),
+    maxEnemies:Math.min(92,64+Math.floor(o*2.3)+Math.floor(player.level/14)),
+    bulletHp:1+Math.floor(o/10),
+    dmg:6+Math.floor(o/8)
   };
 }
 
 const UPGRADE_DEFS = {
   damage:{name:'強化子彈',icon:'✦',max:10,desc:'提高主砲傷害。LV10 進化為高能雷射，獲得額外威力與穿透。'},
-  spread:{name:'強化射程',icon:'⌁',max:5,desc:'將射界擴張為散彈。最高 LV5；每級明顯增加彈道數，LV5 達到最大廣角火力。'},
+  spread:{name:'強化射程',icon:'⌁',max:5,desc:'將射界擴張為散彈。最高 LV5；每級增加 1 發，LV5 最多同時發射 6 發。'},
   pierce:{name:'穿透子彈',icon:'➶',max:10,desc:'子彈擊中目標後不會立刻消失，可連續貫穿更多敵機。'},
-  drones:{name:'子艦護航',icon:'◇',max:5,desc:'新增護航子艦繞行母艦，自動同步目前的彈種、傷害與特殊效果射擊。'},
+  drones:{name:'子艦護航',icon:'◇',max:3,desc:'新增無敵護航子艦，會主動追擊附近敵人並射擊。最高 LV3，最多同時 3 台。'},
   armor:{name:'裝甲強化',icon:'⬡',max:5,desc:'生命格上限 +1，並立即補回 1 格。最高可由 5 格強化到 10 格。'},
   speed:{name:'移動速度強化',icon:'»',max:5,desc:'提升戰機移動速度，閃避與切入火線都更靈活。'},
   radar:{name:'雷達強化',icon:'⌖',max:1,desc:'顯示尚未進入畫面的敵機方位箭頭，可提早對準來襲位置。'},
@@ -472,11 +527,10 @@ const UPGRADE_DEFS = {
   fireRate:{name:'射速強化',icon:'≋',max:10,desc:'縮短主砲射擊間隔。高等級時火力會接近連續彈幕。'},
   shield:{name:'防護罩',icon:'⬡',max:1,desc:'獲得 1 層防護罩。下一次受到攻擊時完全抵銷傷害並自動消失；同時最多只能存在 1 層。'},
   subgun:{name:'新增副砲',icon:'◉',max:1,desc:'解鎖自動副砲。射速慢、傷害較低，但能 360° 自動瞄準敵人，包含後方與 180° 方向。'},
-  subDamage:{name:'副砲強化',icon:'✣',max:3,desc:'提高副砲單發傷害。最高 LV3；只有解鎖副砲後才會出現在升級選項。'},
-  subRate:{name:'副砲射速強化',icon:'»',max:5,desc:'縮短副砲射擊間隔。最高 LV5；只有解鎖副砲後才會出現在升級選項。'},
+  subDamage:{name:'副砲進化',icon:'✣',max:3,desc:'LV1 強化全向機槍；LV2 改為最多 1 枚追蹤飛彈；LV3 改為最多 3 枚巡弋飛彈。'},
+  subRate:{name:'副砲射速強化',icon:'»',max:5,desc:'提高全向副砲機槍射速。進化到飛彈模式（副砲 LV2）後不再生效。'},
   repair:{name:'裝甲修復',icon:'✚',max:0,desc:'立即完全恢復所有 HP。沒有等級，可重複抽到。'},
-  exp:{name:'經驗加倍',icon:'★',max:3,desc:'取得經驗值倍率提升：LV1 ×2、LV2 ×4、LV3 ×8。'},
-  ultGain:{name:'蓄力加倍',icon:'ϟ',max:1,desc:'所有大絕招蓄力獲得量永久變為 ×2。'}
+  exp:{name:'經驗加倍',icon:'★',max:3,desc:'取得經驗值倍率提升：LV1 ×2、LV2 ×4、LV3 ×8。'}
 };
 
 function upgradeLevel(key){
@@ -487,13 +541,13 @@ function upgradeLevel(key){
 function weaponStats(){
   const u=player.upgrades;
   const damageMult=1+u.damage*.28;
-  const spreadCount = u.spread===0 ? 1 : Math.min(11,1+u.spread*2);
+  const spreadCount=Math.min(6,1+u.spread);
   return {
     fireRate: Math.max(.042, .118*Math.pow(.91,u.fireRate)),
     damage: 12*damageMult*(u.damage>=10?1.55:1),
     speed: u.damage>=10 ? 1450 : 1180,
     spread: spreadCount,
-    spreadAngle: .055 + u.spread*.018,
+    spreadAngle:.045+u.spread*.014,
     pierce: u.pierce + (u.damage>=10?3:0),
     laser: u.damage>=10,
     explosive: u.explosive>0
@@ -511,7 +565,7 @@ function makePlayerBullet(x,y,ang,scale=1,fromDrone=false){
 }
 
 function ensureDroneUnits(){
-  const n=player.upgrades.drones;
+  const n=Math.min(3,player.upgrades.drones);
   while(player.droneUnits.length<n){
     const i=player.droneUnits.length;
     player.droneUnits.push({
@@ -661,62 +715,264 @@ function exposedFortressWeakpoints(){
   return boss.weakpoints.filter(w=>!w.destroyed);
 }
 
+function sortedSubgunTargets(x,y){
+  const targets=allAutoTargets();
+  return targets
+    .map(t=>{
+      const dx=t.x-x,dy=t.y-y;
+      const d2=dx*dx+dy*dy;
+      // 後方追擊機是副砲第一優先，讓它真正具有後方防禦價值。
+      const rear=t.kind==='enemy'&&t.ref&&t.ref.type==='rear';
+      return {t,score:d2*(rear?.22:1)};
+    })
+    .sort((a,b)=>a.score-b.score)
+    .map(o=>o.t);
+}
+
+function activeSubMissiles(){
+  let n=0;
+  for(const b of bullets)if(!b.dead&&b.missile)n++;
+  return n;
+}
+
+function updateSubMissile(b,dt){
+  if(!b.missile)return;
+
+  const targets=sortedSubgunTargets(b.x,b.y);
+  if(!targets.length)return;
+
+  const idx=b.cruise?(b.missileSlot%Math.min(3,targets.length)):0;
+  const t=targets[idx]||targets[0];
+
+  const speed=Math.hypot(b.vx,b.vy)||b.missileSpeed;
+  const dist=Math.hypot(t.x-b.x,t.y-b.y)||1;
+  const lead=Math.min(b.cruise?.32:.18,dist/Math.max(1,speed)*.25);
+  const tx=t.x+(t.vx||0)*lead;
+  const ty=t.y+(t.vy||0)*lead;
+
+  const current=Math.atan2(b.vy,b.vx);
+  const desired=Math.atan2(ty-b.y,tx-b.x);
+  let diff=((desired-current+Math.PI*3)%(Math.PI*2))-Math.PI;
+  const maxTurn=b.turnRate*dt;
+  diff=clamp(diff,-maxTurn,maxTurn);
+
+  const next=current+diff;
+  b.vx=Math.cos(next)*b.missileSpeed;
+  b.vy=Math.sin(next)*b.missileSpeed;
+}
+
 function fireSubgun(){
   if(!player.upgrades.subgun || bullets.length>=PERF_LIMITS.bullets)return false;
-  const target=nearestAutoTarget(player.x,player.y,1500,false,0);
-  if(!target)return false;
 
-  const speed=860;
-  const dx0=target.x-player.x,dy0=target.y-player.y;
-  const dist=Math.hypot(dx0,dy0)||1;
-  const lead=Math.min(.30,dist/speed*.28);
-  const tx=target.x+(target.vx||0)*lead;
-  const ty=target.y+(target.vy||0)*lead;
-  const dx=tx-player.x,dy=ty-player.y;
-  const len=Math.hypot(dx,dy)||1;
+  const mode=player.upgrades.subDamage;
+  const targets=sortedSubgunTargets(player.x,player.y);
+  if(!targets.length)return false;
 
-  const dmg=5.5+player.upgrades.subDamage*4.2+player.level*.12;
+  const target=targets[0];
+
+  // LV0～LV1：原本的 360° 全向機槍。副砲射速強化只在此模式生效。
+  if(mode<2){
+    const speed=860;
+    const dx0=target.x-player.x,dy0=target.y-player.y;
+    const dist=Math.hypot(dx0,dy0)||1;
+    const lead=Math.min(.30,dist/speed*.28);
+    const tx=target.x+(target.vx||0)*lead;
+    const ty=target.y+(target.vy||0)*lead;
+    const dx=tx-player.x,dy=ty-player.y;
+    const len=Math.hypot(dx,dy)||1;
+
+    const dmg=5.5+mode*5.2+player.level*.12;
+    bullets.push({
+      x:player.x,y:player.y-2,r:4.5,
+      vx:dx/len*speed,vy:dy/len*speed,
+      dmg,life:2.2,pierce:0,glow:.75,
+      laser:false,explosive:false,fromDrone:false,subgun:true
+    });
+
+    tone(330,.025,'square',.004,70);
+    return true;
+  }
+
+  const maxMissiles=mode>=3?3:1;
+  const active=activeSubMissiles();
+  if(active>=maxMissiles)return false;
+
+  const st=weaponStats();
+  const cruise=mode>=3;
+  const slot=player.missileSeq++%Math.max(1,maxMissiles);
+  const launchSide=(slot%2===0?-1:1);
+  const launchX=player.x+launchSide*(cruise?24:18);
+  const launchY=player.y+8;
+
+  // LV2 約主砲 80% 傷害；LV3 每枚約等於主砲單發。
+  const dmg=st.damage*(cruise?1.0:.80);
+  const missileSpeed=cruise?500:565;
+  const initialAngle=-Math.PI/2+launchSide*(cruise?.34:.20);
+
   bullets.push({
-    x:player.x,y:player.y-2,r:4.5,
-    vx:dx/len*speed,vy:dy/len*speed,
-    dmg,life:2.2,pierce:0,glow:.75,
-    laser:false,explosive:false,fromDrone:false,subgun:true
+    x:launchX,y:launchY,r:cruise?8.5:7.5,
+    vx:Math.cos(initialAngle)*missileSpeed,
+    vy:Math.sin(initialAngle)*missileSpeed,
+    dmg,life:cruise?6.8:5.4,pierce:0,glow:1,
+    laser:false,explosive:false,fromDrone:false,subgun:false,
+    missile:true,cruise,missileSlot:slot,
+    missileSpeed,turnRate:cruise?3.7:2.4
   });
 
-  tone(330,.025,'square',.004,70);
+  tone(cruise?180:220,.045,'sawtooth',.006,-35);
   return true;
 }
 
 function updateSubgun(dt){
   if(!player.upgrades.subgun)return;
+
   player.subCd-=dt;
   if(player.subCd>0)return;
+
+  const mode=player.upgrades.subDamage;
   if(fireSubgun()){
-    const lv=player.upgrades.subRate;
-    player.subCd=Math.max(.34,1.42*Math.pow(.76,lv));
+    if(mode<2){
+      const lv=player.upgrades.subRate;
+      player.subCd=Math.max(.34,1.42*Math.pow(.76,lv));
+    }else if(mode===2){
+      // 飛彈模式不吃副砲射速；同時最多 1 枚，因此實際節奏主要由飛行時間控制。
+      player.subCd=.72;
+    }else{
+      // 巡弋飛彈不吃副砲射速；會逐枚補到最多 3 枚。
+      player.subCd=.58;
+    }
   }else{
-    player.subCd=.12;
+    player.subCd=.11;
   }
 }
 
+function chooseRearSpawn(){
+  const margin=70;
+  const safe=155; // 玩家正後方左右至少 155px 不生成
+  const leftMax=player.x-safe;
+  const rightMin=player.x+safe;
+
+  const canLeft=leftMax>margin+35;
+  const canRight=rightMin<W-margin-35;
+
+  let side;
+  if(canLeft&&canRight)side=Math.random()<.5?-1:1;
+  else if(canLeft)side=-1;
+  else side=1;
+
+  let x;
+  if(side<0){
+    x=rand(margin,Math.max(margin+1,leftMax));
+  }else{
+    x=rand(Math.min(W-margin-1,rightMin),W-margin);
+  }
+
+  return {x:clamp(x,margin,W-margin),side};
+}
+
+function spawnRearInterceptor(){
+  if(game.stage<25 || game.hiddenBossActive || game.stageState!=='wave')return false;
+  if(enemies.length>=PERF_LIMITS.enemies)return false;
+
+  const d=stageDifficulty();
+  const pos=chooseRearSpawn();
+  const s=game.stage;
+  const hp=34+s*2.4;
+
+  enemies.push({
+    x:pos.x,y:H+80+rand(0,90),r:29,
+    hp,maxHp:hp,type:'rear',elite:false,
+    vx:0,vy:-d.enemySpeed*rand(.82,.98),
+    fire:rand(1.4,2.3),age:0,seed:rand(0,1000),
+    rearSide:pos.side,rearPassed:false,
+    value:Math.floor(125*(1+s*.05)),
+    xp:13,countsForQuota:true
+  });
+
+  if(!game.rearWarned){
+    game.rearWarned=true;
+    announce('REAR CONTACT','敵機從左右後方追上 · 副砲可優先處理',850);
+  }
+  return true;
+}
+
 function spawnEnemy(){
-  if(enemies.length>=PERF_LIMITS.enemies)return;
+  if(enemies.length>=PERF_LIMITS.enemies || game.hiddenBossActive)return;
+
   const d=stageDifficulty();
   const s=game.stage;
-  const eliteChance = clamp((s-8)*.018,0,.38);
+
+  const swarmChance=s>=20?clamp(.58+(s-20)*.012,.58,.78):0;
+  const swarm=Math.random()<swarmChance;
+
+  const specialChance=s>=10?(s>=20?.18:.10):0;
+  const special=!swarm&&Math.random()<specialChance;
+
+  const eliteChance=(swarm||special)?0:clamp((s-8)*.018,0,.38);
   const elite=Math.random()<eliteChance;
-  const type = s>=12 && Math.random()<.22 ? 'strafer' : (Math.random()<.18 ? 'tank':'fighter');
-  const x=rand(90,W-90);
-  let hp= type==='tank' ? 85+s*6 : 28+s*3.3;
-  if(elite) hp*=2.2;
+
+  let type;
+  if(swarm){
+    type='swarm';
+  }else if(special){
+    type=Math.random()<.58?'scatter':'piercer';
+  }else{
+    type=s>=12&&Math.random()<.22?'strafer':(Math.random()<.18?'tank':'fighter');
+  }
+
+  const lane=Math.floor(Math.random()*12);
+  const laneW=(W-180)/12;
+  const x=90+laneW*(lane+.5)+rand(-laneW*.36,laneW*.36);
+
+  let hp;
+  if(type==='swarm'){
+    hp=18+s*1.65;
+  }else if(type==='tank'){
+    hp=85+s*6;
+  }else if(type==='scatter'){
+    hp=42+s*3.1;
+  }else if(type==='piercer'){
+    hp=50+s*3.6;
+  }else{
+    hp=28+s*3.3;
+  }
+
+  if(elite)hp*=2.2;
+
+  const r=type==='tank'?40:type==='swarm'?23:(type==='scatter'||type==='piercer'?32:30);
+
+  const vx=type==='strafer'
+    ? rand(-110,110)
+    : type==='swarm'
+      ? rand(-78,78)
+      : (type==='scatter'||type==='piercer')
+        ? rand(-62,62)
+        : rand(-35,35);
+
+  const vy=type==='tank'
+    ? d.enemySpeed*.58
+    : type==='swarm'
+      ? d.enemySpeed*rand(1.06,1.34)
+      : (type==='scatter'||type==='piercer')
+        ? d.enemySpeed*rand(.72,.94)
+        : d.enemySpeed*rand(.78,1.12);
+
+  const fireDelay=type==='swarm'
+    ? rand(d.fireRate*1.8,d.fireRate*3.2)
+    : (type==='scatter'||type==='piercer')
+      ? rand(d.fireRate*.85,d.fireRate*1.25)
+      : rand(.5,d.fireRate);
+
+  const baseValue=type==='tank'?150:type==='swarm'?42:type==='scatter'?135:type==='piercer'?155:90;
+  const baseXp=type==='tank'?16:type==='swarm'?5:type==='scatter'?14:type==='piercer'?16:10;
+
   enemies.push({
-    x,y:-90-rand(0,140),r:type==='tank'?40:30,
-    hp,maxHp:hp, type, elite,
-    vx:type==='strafer'?rand(-110,110):rand(-35,35),
-    vy:d.enemySpeed*(type==='tank'?.58:rand(.78,1.12)),
-    fire:rand(.5,d.fireRate), age:0, seed:rand(0,1000),
-    value:Math.floor((type==='tank'?150:90)*(elite?2.2:1)*(1+s*.05)),
-    xp:Math.floor((type==='tank'?16:10)*(elite?1.7:1))
+    x,y:-70-rand(0,type==='swarm'?230:140),r,
+    hp,maxHp:hp,type,elite,vx,vy,
+    fire:fireDelay,age:0,seed:rand(0,1000),
+    value:Math.floor(baseValue*(elite?2.2:1)*(1+s*.05)),
+    xp:Math.max(2,Math.floor(baseXp*(elite?1.7:1))),
+    countsForQuota:true
   });
 }
 
@@ -774,8 +1030,12 @@ function spawnBoss(){
   const hard=s>25;
   const type=getFortressType(s);
 
-  const outerHp=hard?1150+(s-25)*155:430+s*72;
-  const fighterFullHp=Math.max(620,outerHp*(hard?1.45:1.25));
+  const baseOuterHp=hard?1150+(s-25)*155:430+s*72;
+  const fortressHpMult=s>=20?4:s>=10?2:1;
+  const outerHp=baseOuterHp*fortressHpMult;
+
+  // 最後脫離的殘機維持原本較薄的血量，不吃基地 2x / 4x 加成。
+  const fighterFullHp=Math.max(620,baseOuterHp*(hard?1.45:1.25));
   const fighterHp=fighterFullHp*(hard?.36:.28);
 
   boss={
@@ -783,7 +1043,8 @@ function spawnBoss(){
     fortressType:type.id,
     fortressName:type.name,
     x:W/2,y:-310,r:350,w:760,h:310,
-    age:0,fire:.75,spawn:3.8,vx:hard?115:85,vy:0,targetY:205,
+    age:0,fire:.75,spawn:3.8,missileFire:s>=20?2.5:999,vx:hard?115:85,vy:0,targetY:205,
+    fortressHpMult,
     name:type.name,
     weakpoints:type.weak.map((p,i)=>({
       id:'W'+(i+1),x:p[0],y:p[1],r:40,
@@ -803,7 +1064,10 @@ function spawnBoss(){
 
   ui.bossName.textContent=boss.name;
   ui.boss.classList.add('show');
-  announce('FORTRESS',`${type.name} · 先拆前緣弱點`,1200);
+  const fortressTier=s>=20?'TIER 3 · HP×4 / BULLET SPEED×4 / PIERCE II + MISSILE':
+    s>=10?'TIER 2 · HP×2 / BULLET SPEED×2':
+    'TIER 1';
+  announce('FORTRESS',`${type.name} · ${fortressTier}`,1350);
   sfx('boss');
 }
 
@@ -977,6 +1241,7 @@ function hitFortressBullet(b){
       if(b.explosive && !result.killed && boss){
         explodeShot(b.x,b.y,b.dmg);
       }
+      if(b.missile)burst(b.x,b.y,12,'elite');
       return true;
     }
     return false;
@@ -990,6 +1255,7 @@ function hitFortressBullet(b){
     if(segmentCircleIntersects(px,py,b.x,b.y,wx,wy,w.r+b.r+4)){
       damageFortressWeakpoint(w,b.dmg);
       if(b.explosive)explodeShot(b.x,b.y,b.dmg);
+      if(b.missile)burst(b.x,b.y,12,'elite');
       return true;
     }
   }
@@ -998,6 +1264,7 @@ function hitFortressBullet(b){
   if(h.type==='weak'){
     damageFortressWeakpoint(h.weak,b.dmg);
     if(b.explosive)explodeShot(b.x,b.y,b.dmg);
+    if(b.missile)burst(b.x,b.y,12,'elite');
     return true;
   }
   if(h.type==='armor'){
@@ -1034,19 +1301,52 @@ function damageExposedFortressByUltimate(){
   }
 }
 
+function launchFortressMissiles(){
+  if(!boss || boss.phase!=='fortress' || game.stage<20)return;
+  if(enemyBullets.length>=PERF_LIMITS.enemyBullets)return;
+
+  const active=boss.segments.filter(seg=>!seg.destroyed);
+  if(!active.length)return;
+
+  const count=game.stage>=30?2:1;
+  for(let i=0;i<count&&enemyBullets.length<PERF_LIMITS.enemyBullets;i++){
+    const seg=active[(i+Math.floor(Math.random()*active.length))%active.length];
+    const x=boss.x+seg.turretX;
+    const y=boss.y+seg.turretY+8;
+    const initial=Math.atan2(player.y-y,player.x-x)+rand(-.16,.16);
+    const speed=game.stage>=30?315:275;
+
+    enemyBullets.push({
+      x,y,r:11,
+      vx:Math.cos(initial)*speed,
+      vy:Math.sin(initial)*speed,
+      hp:4,maxHp:4,life:8.5,dmg:1,boss:true,
+      bossMissile:true,missileSpeed:speed,turnRate:1.55
+    });
+  }
+
+  tone(125,.055,'sawtooth',.005,-25);
+}
+
 function bossFire(){
   if(!boss || enemyBullets.length>=PERF_LIMITS.enemyBullets)return;
-  const s=game.stage,hard=s>25;
-  const speed=hard?350+(s-25)*10:245+s*3;
+
+  const s=game.stage;
+  const hard=s>25;
+  const baseSpeed=hard?350+(s-25)*10:245+s*3;
+
+  // 只強化「基地」火砲；最後殘機仍維持原本較弱的掙扎火力。
+  const fortressSpeedMult=s>=20?4:s>=10?2:1;
+  const fortressSpeed=baseSpeed*fortressSpeedMult;
 
   if(boss.phase==='fighter'){
     const hpRatio=clamp(boss.fighterHp/boss.fighterMaxHp,0,1);
     const aimed=Math.atan2(player.y-boss.y,player.x-boss.x);
     const count=hpRatio<.30?(hard?3:2):(hard?5:3);
     const spread=hard?.13:.17;
-    const fighterSpeed=(hard?speed*.88:speed*.78)*(.90+.10*hpRatio);
+    const fighterSpeed=(hard?baseSpeed*.88:baseSpeed*.78)*(.90+.10*hpRatio);
 
-    for(let i=0;i<count && enemyBullets.length<PERF_LIMITS.enemyBullets;i++){
+    for(let i=0;i<count&&enemyBullets.length<PERF_LIMITS.enemyBullets;i++){
       const a=aimed+(i-(count-1)/2)*spread;
       enemyBullets.push({
         x:boss.x,y:boss.y+28,r:hard?9:7,
@@ -1058,33 +1358,166 @@ function bossFire(){
   }
 
   const activeSegments=boss.segments.filter(seg=>!seg.destroyed);
+  const piercingLv2=s>=20;
+
   for(const seg of activeSegments){
-    const ox=boss.x+seg.turretX,oy=boss.y+seg.turretY;
+    if(enemyBullets.length>=PERF_LIMITS.enemyBullets)break;
+
+    const ox=boss.x+seg.turretX;
+    const oy=boss.y+seg.turretY;
     const aimed=Math.atan2(player.y-oy,player.x-ox);
     const count=hard?2:1;
-    for(let i=0;i<count;i++){
+
+    for(let i=0;i<count&&enemyBullets.length<PERF_LIMITS.enemyBullets;i++){
       const a=aimed+(i-(count-1)/2)*.13;
+      const hp=piercingLv2?2:(hard?1+Math.floor((s-25)/10):1);
+
       enemyBullets.push({
-        x:ox,y:oy,r:hard?10:8,
-        vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,
-        hp:hard?1+Math.floor((s-25)/10):1,maxHp:1,life:8,dmg:1,boss:true
+        x:ox,y:oy,r:piercingLv2?9:(hard?10:8),
+        vx:Math.cos(a)*fortressSpeed,
+        vy:Math.sin(a)*fortressSpeed,
+        hp,maxHp:hp,life:8,dmg:1,boss:true,
+        piercing:piercingLv2,
+        pierceLevel:piercingLv2?2:0
       });
     }
   }
 }
 
+function hiddenBossEnemy(){
+  return enemies.find(e=>e.type==='mirrorBoss'&&!e.dead)||null;
+}
+
+function spawnHiddenBoss(){
+  if(game.hiddenBossSpawned || game.hiddenBossActive || game.stageState!=='wave')return;
+
+  game.hiddenBossSpawned=true;
+  game.hiddenBossPending=false;
+  game.hiddenBossActive=true;
+
+  // 鏡像遭遇是獨立小決鬥，不讓普通敵海干擾。
+  enemies.length=0;
+  enemyBullets.length=0;
+
+  const st=weaponStats();
+  const s=game.stage;
+
+  // 它模仿玩家，但刻意較弱：血量中等、射速更慢、散彈最多 5 向。
+  const hp=Math.max(320,180+s*22+player.level*24);
+  enemies.push({
+    x:W/2,y:-95,r:46,
+    hp,maxHp:hp,type:'mirrorBoss',elite:false,
+    vx:0,vy:130,fire:1.1,age:0,seed:rand(0,1000),
+    targetX:W/2,targetY:220,moveTimer:1.4,
+    mirrorSpread:Math.min(5,st.spread),
+    mirrorFireRate:Math.max(.28,st.fireRate*4.0),
+    mirrorBulletSpeed:Math.min(760,500+player.level*8),
+    value:1800+s*95,
+    xp:70+s*3,
+    countsForQuota:false
+  });
+
+  ui.bossName.textContent='PHANTOM THUNDER';
+  ui.boss.classList.add('show');
+  announce('UNKNOWN SIGNAL','PHANTOM THUNDER · 鏡像機體出現',1200);
+  sfx('boss');
+}
+
+function mirrorBossFire(e){
+  if(enemyBullets.length>=PERF_LIMITS.enemyBullets)return;
+
+  const aimed=Math.atan2(player.y-e.y,player.x-e.x);
+  const count=Math.max(1,e.mirrorSpread||1);
+  const spread=count>1?.115:0;
+  const speed=e.mirrorBulletSpeed||560;
+
+  for(let i=0;i<count && enemyBullets.length<PERF_LIMITS.enemyBullets;i++){
+    const a=aimed+(i-(count-1)/2)*spread;
+    enemyBullets.push({
+      x:e.x,y:e.y+30,r:7,
+      vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,
+      hp:1,maxHp:1,life:7,dmg:1,boss:true,mirror:true
+    });
+  }
+}
+
 function enemyFire(e){
   if(enemyBullets.length>=PERF_LIMITS.enemyBullets)return;
+
+  if(e.type==='rear'){
+    ctx.shadowColor='rgba(88,181,205,.28)';
+    ctx.shadowBlur=9;
+    ctx.fillStyle='#31576a';
+    ctx.strokeStyle='#8ed1dc';
+    ctx.lineWidth=2;
+
+    // 追擊機機鼻朝上；尾翼較寬，讓玩家一眼看出它是後方追上的特殊機。
+    ctx.beginPath();
+    ctx.moveTo(0,-35);
+    ctx.lineTo(13,-7);
+    ctx.lineTo(37,10);
+    ctx.lineTo(16,12);
+    ctx.lineTo(10,30);
+    ctx.lineTo(0,22);
+    ctx.lineTo(-10,30);
+    ctx.lineTo(-16,12);
+    ctx.lineTo(-37,10);
+    ctx.lineTo(-13,-7);
+    ctx.closePath();
+    ctx.fill();ctx.stroke();
+
+    ctx.fillStyle='#e8b56e';
+    ctx.beginPath();ctx.ellipse(0,-8,6,13,0,0,Math.PI*2);ctx.fill();
+
+    ctx.strokeStyle='rgba(114,208,220,.7)';
+    ctx.beginPath();
+    ctx.moveTo(-25,12);ctx.lineTo(-34,23);
+    ctx.moveTo(25,12);ctx.lineTo(34,23);
+    ctx.stroke();
+
+    ctx.restore();
+    return;
+  }
+
+  if(e.type==='mirrorBoss'){
+    mirrorBossFire(e);
+    return;
+  }
+
   const d=stageDifficulty();
   const a=Math.atan2(player.y-e.y,player.x-e.x);
-  const count=(game.stage>25 && e.elite)?3:1;
-  for(let i=0;i<count;i++){
-    const aa=a+(i-(count-1)/2)*.14;
+
+  let count=(game.stage>25&&e.elite)?3:1;
+  let spread=.14;
+  let bulletSpeed=d.bulletSpeed;
+  let bulletHp=d.bulletHp+(e.elite&&game.stage>=30?1:0);
+  let bulletR=e.elite?9:7;
+  let piercing=false;
+
+  // SCATTER：3～5 發小散彈，但彈速略低，讓玩家有反應時間。
+  if(e.type==='scatter'){
+    count=game.stage>=25?5:3;
+    spread=.155;
+    bulletSpeed*=.88;
+    bulletR=6.5;
+  }
+
+  // PIERCER：單發穿透彈，能頂著我方火網前進，但仍可被連續命中打掉。
+  if(e.type==='piercer'){
+    count=1;
+    bulletSpeed*=1.13;
+    bulletHp=Math.max(3,d.bulletHp+2);
+    bulletR=8;
+    piercing=true;
+  }
+
+  for(let i=0;i<count&&enemyBullets.length<PERF_LIMITS.enemyBullets;i++){
+    const aa=a+(i-(count-1)/2)*spread;
     enemyBullets.push({
-      x:e.x,y:e.y+18,r:e.elite?9:7,
-      vx:Math.cos(aa)*d.bulletSpeed,vy:Math.sin(aa)*d.bulletSpeed,
-      hp:d.bulletHp+(e.elite&&game.stage>=30?1:0),
-      maxHp:d.bulletHp,life:8,dmg:d.dmg+(e.elite?2:0),boss:false
+      x:e.x,y:e.y+18,r:bulletR,
+      vx:Math.cos(aa)*bulletSpeed,vy:Math.sin(aa)*bulletSpeed,
+      hp:bulletHp,maxHp:bulletHp,life:8,dmg:1,boss:false,
+      piercing,scatter:e.type==='scatter'
     });
   }
 }
@@ -1122,6 +1555,7 @@ function availableUpgradeKeys(){
     }
 
     if((key==='subDamage'||key==='subRate') && player.upgrades.subgun<1)continue;
+    if(key==='subRate' && player.upgrades.subDamage>=2)continue;
     if(key==='shield' && player.upgrades.shield>=1)continue;
 
     if(upgradeLevel(key)<d.max)keys.push(key);
@@ -1208,7 +1642,7 @@ function applyUpgrade(key){
   if(key==='drones'){
     ensureDroneUnits();
     burst(player.x,player.y,18,'level');
-    announce('DRONE LINK',`護航子艦 ${player.upgrades.drones} / 5`,650);
+    announce('DRONE LINK',`護航子艦 ${player.upgrades.drones} / 3`,650);
   }
 
   if(key==='shield'){
@@ -1220,30 +1654,63 @@ function applyUpgrade(key){
     player.subCd=0;
     announce('OMNI CANNON','360° 自動副砲上線',800);
   }
+
+  if(key==='subDamage'){
+    player.subCd=0;
+    if(player.upgrades.subDamage===1){
+      announce('SUB CANNON +','全向副砲機槍強化',700);
+    }else if(player.upgrades.subDamage===2){
+      announce('MISSILE ONLINE','最多 1 枚追蹤飛彈 · 主砲 80% 傷害',900);
+    }else if(player.upgrades.subDamage===3){
+      announce('CRUISE MISSILE','最多 3 枚巡弋飛彈 · 主砲 100% 傷害',1000);
+    }
+  }
 }
 
 function gainUlt(v){
-  const mult=player.upgrades.ultGain?2:1;
-  player.ult=clamp(player.ult+v*mult,0,player.ultMax);
+  // THUNDER BREAK 執行期間的擊破、弱點破壞、敵彈清除都不能反向回補蓄力。
+  if(game.suppressUltGain)return;
+  player.ult=clamp(player.ult+v*.58,0,player.ultMax);
 }
 
 function useUltimate(){
-  if(player.ult<player.ultMax || !game.running || game.paused || game.upgrading) return;
+  if(
+    player.ult<player.ultMax ||
+    player.ultCooldown>0 ||
+    !game.running ||
+    game.paused ||
+    game.upgrading
+  )return;
+
   player.ult=0;
+  player.ultCooldown=30;
   game.flash=1;
   game.shake=28;
+
   sfx('ult');
-  announce('THUNDER BREAK','全屏雷霆殲滅',900);
-  for(const e of enemies){ killEnemy(e); }
-  for(const b of enemyBullets){
-    burst(b.x,b.y,5,'spark');
-    game.score+=8;
-    game.destroyedBullets++;
+  announce('THUNDER BREAK','全屏雷霆殲滅 · 冷卻 30 秒',900);
+
+  // 防止「大絕殺怪 → 回補大絕 → 很快再放」的循環。
+  game.suppressUltGain=true;
+  try{
+    for(const e of enemies){
+      killEnemy(e);
+    }
+
+    for(const b of enemyBullets){
+      burst(b.x,b.y,5,'spark');
+      game.score+=8;
+      game.destroyedBullets++;
+    }
+    enemyBullets.length=0;
+
+    if(boss){
+      damageExposedFortressByUltimate();
+    }
+  }finally{
+    game.suppressUltGain=false;
   }
-  enemyBullets.length=0;
-  if(boss){
-    damageExposedFortressByUltimate();
-  }
+
   for(let i=0;i<36;i++){
     lightning.push(makeBolt(rand(0,W),0,rand(0,W),rand(H*.35,H),rand(2.5,7)));
   }
@@ -1324,13 +1791,49 @@ function hitPlayer(dmg){
 function killEnemy(e){
   if(e.dead)return;
   e.dead=true;
-  game.kills++; game.stageKills++;
+  game.kills++;
+
+  if(e.countsForQuota!==false)game.stageKills++;
+
   game.score+=e.value;
-  game.combo++; game.comboTimer=2.4; game.maxCombo=Math.max(game.maxCombo,game.combo);
+  game.combo++;
+  game.comboTimer=2.4;
+  game.maxCombo=Math.max(game.maxCombo,game.combo);
+
   addXP(e.xp);
-  gainUlt(e.elite?4.0:(e.type==='tank'?2.6:1.65));
+
+  if(e.type==='mirrorBoss'){
+    gainUlt(14);
+    burst(e.x,e.y,58,'boss');
+    game.hiddenBossActive=false;
+    enemyBullets.length=0;
+    ui.boss.classList.remove('show');
+    announce('PHANTOM DOWN','鏡像機體擊破 · 敵軍增援恢復',1000);
+    sfx('kill');
+    return;
+  }
+
+  gainUlt(
+    e.elite?4.0:
+    e.type==='tank'?2.6:
+    (e.type==='scatter'||e.type==='piercer'||e.type==='rear')?2.1:
+    1.65
+  );
+
   burst(e.x,e.y,e.elite?30:18,e.elite?'elite':'enemy');
-  if(Math.random()<.035) pickups.push({x:e.x,y:e.y,r:14,vy:110,type:'repair',life:9});
+
+  // 血包改成真正的稀有補給：蜂群最低、菁英稍高。
+  const healDrop=
+    e.elite?.015:
+    e.type==='tank'?.010:
+    (e.type==='scatter'||e.type==='piercer'||e.type==='rear')?.010:
+    e.type==='swarm'?.0025:
+    .008;
+
+  if(Math.random()<healDrop && pickups.length<PERF_LIMITS.pickups){
+    pickups.push({x:e.x,y:e.y,r:14,vy:110,type:'repair',life:9});
+  }
+
   sfx('kill');
 }
 
@@ -1385,7 +1888,7 @@ const PERF_LIMITS={
   particles:560,
   lightning:96,
   pickups:28,
-  enemies:56
+  enemies:96
 };
 
 function particle(x,y,vx,vy,life,size,type){
@@ -1425,6 +1928,7 @@ function update(dt){
 
   if(game.upgrading)return;
 
+  player.ultCooldown=Math.max(0,player.ultCooldown-dt);
   game.time+=dt;
   game.flash=Math.max(0,game.flash-dt*2.1);
   game.shake=Math.max(0,game.shake-dt*35);
@@ -1469,13 +1973,54 @@ function update(dt){
   // stage wave
   if(game.stageState==='wave'){
     const d=stageDifficulty();
-    game.spawnTimer-=dt;
-    if(game.stageKills<game.quota && game.spawnTimer<=0 && enemies.length<d.maxEnemies){
-      const batch = game.stage>25 && Math.random()<.28 ? 2 : 1;
-      for(let i=0;i<batch;i++) spawnEnemy();
-      game.spawnTimer=Math.max(.16, .72-game.stage*.012-player.level*.008);
+
+    if(game.hiddenBossPending&&!game.hiddenBossActive){
+      game.hiddenBossTimer-=dt;
+      if(game.hiddenBossTimer<=0)spawnHiddenBoss();
     }
-    if(game.stageKills>=game.quota && enemies.length===0){
+
+    game.spawnTimer-=dt;
+
+    // 25關後出現後方追擊機。它們從玩家正後方安全走廊以外生成，
+    // 先從左右兩側追上，再超車到前方，不會預設朝玩家本體撞擊。
+    if(game.stage>=25&&!game.hiddenBossActive&&game.stageKills<game.quota){
+      game.rearTimer-=dt;
+      if(game.rearTimer<=0){
+        const n=game.stage>=35?(Math.random()<.45?2:1):1;
+        for(let i=0;i<n;i++)spawnRearInterceptor();
+        game.rearTimer=game.stage>=30?rand(2.8,4.8):rand(4.0,6.4);
+      }
+    }
+
+    if(!game.hiddenBossActive && game.stageKills<game.quota && game.spawnTimer<=0 && enemies.length<d.maxEnemies){
+      let batch=1;
+
+      if(game.stage>=30){
+        batch=7+Math.floor(Math.random()*5);       // 7～11 架
+      }else if(game.stage>=25){
+        batch=5+Math.floor(Math.random()*4);       // 5～8 架
+      }else if(game.stage>=20){
+        batch=3+Math.floor(Math.random()*3);       // 3～5 架
+      }else if(game.stage>=15){
+        batch=2+Math.floor(Math.random()*2);       // 2～3 架
+      }else if(game.stage>=10){
+        batch=2;                                   // 固定 2 架
+      }
+
+      batch=Math.min(batch,d.maxEnemies-enemies.length,game.quota-game.stageKills);
+      for(let i=0;i<batch;i++)spawnEnemy();
+
+      game.spawnTimer=game.stage<10
+        ? Math.max(.28,.74-game.stage*.018-player.level*.004)
+        : game.stage<20
+          ? Math.max(.15,.46-(game.stage-10)*.018-player.level*.002)
+          : Math.max(.10,.34-(game.stage-20)*.008-player.level*.0014);
+    }
+
+    if(game.stageKills>=game.quota && enemies.length===0 && !game.hiddenBossActive){
+      // 如果這關的 1% 遭遇尚未發生但計時還沒到，普通關卡照常結束；
+      // 1% 是隱藏事件，不強迫玩家等待它。
+      game.hiddenBossPending=false;
       game.stageState='bossWarning';
       game.bossDelay=3.4;
       enemyBullets.length=0;
@@ -1498,19 +2043,127 @@ function update(dt){
   // enemies
   for(const e of enemies){
     e.age+=dt;
-    if(e.type==='strafer') e.x += Math.sin(e.age*2.4+e.seed)*210*dt + e.vx*dt*.3;
-    else e.x+=e.vx*dt;
+
+    if(e.type==='mirrorBoss'){
+      if(e.y<190){
+        e.y+=150*dt;
+      }else{
+        e.moveTimer-=dt;
+        if(e.moveTimer<=0){
+          e.targetX=clamp(player.x+rand(-260,260),150,W-150);
+          e.targetY=rand(155,330);
+          e.moveTimer=rand(1.7,2.7);
+        }
+
+        const dx=e.targetX-e.x,dy=e.targetY-e.y;
+        const dist=Math.hypot(dx,dy)||1;
+        const sp=170;
+        const step=Math.min(dist,sp*dt);
+        e.x+=dx/dist*step;
+        e.y+=dy/dist*step;
+      }
+
+      e.fire-=dt;
+      if(e.fire<=0&&e.y>90){
+        enemyFire(e);
+        e.fire=e.mirrorFireRate*rand(.92,1.18);
+      }
+
+      // 鏡像機不能逃出畫面，也不會因為越界被當成普通擊墜數。
+      e.x=clamp(e.x,90,W-90);
+      e.y=clamp(e.y,130,H*.43);
+
+      if(circleHit(e,player,2)){
+        hitPlayer(1);
+        e.targetY=170;
+      }
+      continue;
+    }
+
+    if(e.type==='rear'){
+      // 後方追擊機不是衝撞機。靠近玩家高度前，始終維持在左右安全走廊之外。
+      const safe=150;
+      const preferredX=clamp(player.x+e.rearSide*(205+Math.sin(e.age*1.7+e.seed)*28),55,W-55);
+
+      if(!e.rearPassed){
+        const dx=preferredX-e.x;
+        e.x+=clamp(dx,-190*dt,190*dt);
+
+        // 如果玩家主動橫移到它前方，AI仍會往原本那一側讓開。
+        if(Math.abs(e.x-player.x)<safe && e.y>player.y-105){
+          e.x+=e.rearSide*230*dt;
+        }
+
+        e.y+=e.vy*dt;
+
+        // 從左右兩側超過玩家後，才算進到正常前方空戰。
+        if(e.y<player.y-115){
+          e.rearPassed=true;
+          e.vy=-Math.abs(e.vy)*.92;
+          e.vx=e.rearSide*rand(18,48);
+        }
+      }else{
+        e.x+=e.vx*dt+Math.sin(e.age*2.1+e.seed)*34*dt;
+        e.y+=e.vy*dt;
+      }
+
+      e.x=clamp(e.x,45,W-45);
+      e.fire-=dt;
+
+      // 在玩家後方時不開火；超車到前方後才開始正常射擊。
+      if(e.rearPassed&&e.fire<=0&&e.y>45&&e.y<H*.76){
+        enemyFire(e);
+        const d=stageDifficulty();
+        e.fire=rand(d.fireRate*1.0,d.fireRate*1.45);
+      }
+
+      if(e.y<-100){
+        e.dead=true;
+        if(e.countsForQuota!==false)game.stageKills++;
+        game.combo=0;
+      }
+
+      // AI不主動撞玩家，但玩家若自己橫移碰到敵機仍有碰撞傷害。
+      if(circleHit(e,player,-4)){
+        e.dead=true;
+        hitPlayer(1);
+        burst(e.x,e.y,22,'enemy');
+      }
+      continue;
+    }
+
+    if(e.type==='strafer'){
+      e.x+=Math.sin(e.age*2.4+e.seed)*210*dt+e.vx*dt*.3;
+    }else if(e.type==='swarm'){
+      e.x+=e.vx*dt+Math.sin(e.age*3.4+e.seed)*46*dt;
+    }else{
+      e.x+=e.vx*dt;
+    }
+
     e.y+=e.vy*dt;
     e.x=clamp(e.x,45,W-45);
     e.fire-=dt;
-    if(e.fire<=0 && e.y>40 && e.y<H*.78){
+
+    if(e.fire<=0&&e.y>40&&e.y<H*.78){
       enemyFire(e);
       const d=stageDifficulty();
-      e.fire=rand(d.fireRate*.8,d.fireRate*1.35)*(e.elite?.78:1);
+      const specialMul=(e.type==='scatter'||e.type==='piercer')?.92:1;
+      e.fire=rand(d.fireRate*.8,d.fireRate*1.35)*(e.elite?.78:1)*(e.type==='swarm'?2.35:1)*specialMul;
     }
-    if(e.y>H+90){e.dead=true; game.stageKills++; game.combo=0;}
-    if(circleHit(e,player,4)){e.dead=true;hitPlayer(1);burst(e.x,e.y,22,'enemy')}
+
+    if(e.y>H+90){
+      e.dead=true;
+      if(e.countsForQuota!==false)game.stageKills++;
+      game.combo=0;
+    }
+
+    if(circleHit(e,player,4)){
+      e.dead=true;
+      hitPlayer(1);
+      burst(e.x,e.y,22,'enemy');
+    }
   }
+
   enemies=enemies.filter(e=>!e.dead);
 
   // boss
@@ -1535,6 +2188,14 @@ function update(dt){
         boss.fire=hard
           ? Math.max(.42,.94-(4-remaining)*.055)
           : Math.max(.82,1.52-game.stage*.018);
+      }
+
+      if(game.stage>=20){
+        boss.missileFire-=dt;
+        if(boss.missileFire<=0){
+          launchFortressMissiles();
+          boss.missileFire=game.stage>=30?rand(1.9,2.6):rand(2.6,3.5);
+        }
       }
 
       boss.spawn-=dt;
@@ -1616,21 +2277,40 @@ function update(dt){
   // player bullets
   for(const b of bullets){
     b.prevX=b.x;b.prevY=b.y;
+    if(b.missile)updateSubMissile(b,dt);
     b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt;
     let consumed=false;
 
-    // destroy enemy bullets first
-    for(const eb of enemyBullets){
+    // 飛彈穿過一般敵彈，不會被彈幕隨機攔掉；普通主砲仍可攔截敵彈。
+    if(!b.missile) for(const eb of enemyBullets){
       if(eb.dead)continue;
       if(circleHit(b,eb,2)){
-        eb.hp-=Math.max(1,Math.floor(b.dmg/14));
+        const interceptDamage=Math.max(1,Math.floor(b.dmg/14));
+
+        // 穿透彈能穿過數發我方火力；不是無敵，但比普通敵彈更難攔截。
+        eb.hp-=interceptDamage;
+
         if(eb.hp<=0){
-          eb.dead=true; game.destroyedBullets++; game.score+=6;
+          eb.dead=true;
+          game.destroyedBullets++;
+          game.score+=6;
           gainUlt(.15);
           burst(eb.x,eb.y,4,'spark');
+        }else if(eb.piercing){
+          burst(eb.x,eb.y,2,'spark');
         }
-        if(b.explosive){ explodeShot(b.x,b.y,b.dmg); consumed=true; break; }
-        if(b.pierce>0)b.pierce--;else{consumed=true;break}
+
+        if(b.explosive){
+          explodeShot(b.x,b.y,b.dmg);
+          consumed=true;
+          break;
+        }
+
+        if(b.pierce>0)b.pierce--;
+        else{
+          consumed=true;
+          break;
+        }
       }
     }
     if(consumed){b.dead=true;continue}
@@ -1639,11 +2319,19 @@ function update(dt){
       if(e.dead)continue;
       if(circleHit(b,e,-2)){
         e.hp-=b.dmg;
-        burst(b.x,b.y,2,'hit');
-        if(b.explosive){ explodeShot(b.x,b.y,b.dmg); b.dead=true; }
+        burst(b.x,b.y,b.missile?12:2,b.missile?'elite':'hit');
+
+        if(b.explosive){
+          explodeShot(b.x,b.y,b.dmg);
+          b.dead=true;
+        }
+
+        if(b.missile)b.dead=true;
         if(e.hp<=0)killEnemy(e);
-        if(b.dead) break;
-        if(b.pierce>0)b.pierce--;else{b.dead=true;break}
+        if(b.dead)break;
+
+        if(b.pierce>0)b.pierce--;
+        else{b.dead=true;break}
       }
     }
     if(b.dead)continue;
@@ -1657,8 +2345,24 @@ function update(dt){
 
   // enemy bullets
   for(const b of enemyBullets){
-    b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt;
-    if(!b.dead&&circleHit(b,player,-5)){b.dead=true;hitPlayer(1);}
+    if(b.bossMissile){
+      const current=Math.atan2(b.vy,b.vx);
+      const desired=Math.atan2(player.y-b.y,player.x-b.x);
+      let diff=((desired-current+Math.PI*3)%(Math.PI*2))-Math.PI;
+      diff=clamp(diff,-b.turnRate*dt,b.turnRate*dt);
+      const next=current+diff;
+      b.vx=Math.cos(next)*b.missileSpeed;
+      b.vy=Math.sin(next)*b.missileSpeed;
+    }
+
+    b.x+=b.vx*dt;
+    b.y+=b.vy*dt;
+    b.life-=dt;
+
+    if(!b.dead&&circleHit(b,player,-5)){
+      b.dead=true;
+      hitPlayer(1);
+    }
   }
   enemyBullets=enemyBullets.filter(b=>!b.dead&&b.life>0&&b.x>-70&&b.x<W+70&&b.y>-70&&b.y<H+70);
 
@@ -1719,24 +2423,39 @@ function updateUI(){
   ui.xpFill.style.width=xpPct+'%';
   ui.xpText.lastElementChild.textContent=`${Math.floor(player.xp)} / ${player.xpNeed}`;
   const up=player.ult/player.ultMax*100;
+  const ultReady=up>=100&&player.ultCooldown<=0;
   ui.ultFill.style.width=up+'%';
-  ui.ultText.lastElementChild.textContent=up>=100?'READY / R':`${Math.floor(up)}%`;
-  ui.ultWrap.classList.toggle('ready',up>=100);
+
+  if(player.ultCooldown>0){
+    ui.ultText.lastElementChild.textContent=`${Math.floor(up)}% · CD ${player.ultCooldown.toFixed(1)}s`;
+  }else{
+    ui.ultText.lastElementChild.textContent=ultReady?'READY / R':`${Math.floor(up)}%`;
+  }
+
+  ui.ultWrap.classList.toggle('ready',ultReady);
   ui.stage.textContent=String(game.stage).padStart(2,'0');
-  ui.enemies.textContent=String(boss&&boss.phase==='fighter'?1:enemies.length+(boss?1:0));
+  ui.enemies.textContent=String(game.hiddenBossActive?1:(boss&&boss.phase==='fighter'?1:enemies.length+(boss?1:0)));
   const u=player.upgrades;
-  const power=1+u.damage*.20+u.spread*.08+u.pierce*.06+u.drones*.25+u.fireRate*.12+u.explosive*.25+u.subgun*.16+u.subDamage*.08+u.subRate*.05;
+  const effectiveSubRate=u.subDamage>=2?0:u.subRate;
+  const power=1+u.damage*.20+u.spread*.08+u.pierce*.06+u.drones*.25+u.fireRate*.12+u.explosive*.25+u.subgun*.16+u.subDamage*.10+effectiveSubRate*.05;
   ui.power.textContent=power.toFixed(1)+'×';
   ui.score.textContent=String(Math.floor(game.score)).padStart(8,'0');
 
   const active=[];
-  const labels={damage:'彈傷',spread:'散彈',pierce:'穿透',drones:'子艦',armor:'裝甲',speed:'速度',radar:'雷達',explosive:'爆裂',fireRate:'射速',shield:'護盾',subgun:'副砲',subDamage:'副砲威力',subRate:'副砲射速',exp:'經驗×',ultGain:'蓄力×'};
+  const labels={damage:'彈傷',spread:'散彈',pierce:'穿透',drones:'子艦',armor:'裝甲',speed:'速度',radar:'雷達',explosive:'爆裂',fireRate:'射速',shield:'護盾',subgun:'副砲',subDamage:'副砲進化',subRate:'副砲射速',exp:'經驗×'};
   for(const [k,v] of Object.entries(u)){
     if(!v)continue;
-    if(k==='exp') active.push(`經驗 ×${Math.pow(2,v)}`);
-    else if(k==='ultGain') active.push('蓄力 ×2');
-    else if(k==='radar'||k==='explosive'||k==='shield'||k==='subgun')active.push(labels[k]+' ON');
-    else active.push(`${labels[k]} LV${v}`);
+    if(k==='exp'){
+      active.push(`經驗 ×${Math.pow(2,v)}`);
+    }else if(k==='subDamage'){
+      active.push(v===1?'副砲機槍 LV1':v===2?'副砲：飛彈':'副砲：巡弋飛彈');
+    }else if(k==='subRate'&&u.subDamage>=2){
+      active.push(`副砲射速 LV${v}（機槍限定）`);
+    }else if(k==='radar'||k==='explosive'||k==='shield'||k==='subgun'){
+      active.push(labels[k]+' ON');
+    }else{
+      active.push(`${labels[k]} LV${v}`);
+    }
   }
   ui.buildList.textContent=active.length?active.join(' · '):'尚未取得強化';
   ui.comboN.textContent='x'+game.combo;
@@ -1750,10 +2469,30 @@ function updateUI(){
       const rem=fortressOuterRemaining();
       ui.bossHp.textContent=`WEAK ${4-rem}/4`;
     }
+  }else if(game.hiddenBossActive){
+    const mirror=hiddenBossEnemy();
+    if(mirror){
+      const p=clamp(mirror.hp/mirror.maxHp*100,0,100);
+      ui.bossName.textContent='PHANTOM THUNDER';
+      ui.bossFill.style.width=p+'%';
+      ui.bossHp.textContent=`MIRROR HP · ${Math.ceil(p)}%`;
+      ui.boss.classList.add('show');
+    }
   }
   if(game.stageState==='wave'){
-    ui.objective.textContent=`擊墜 ${Math.min(game.stageKills,game.quota)} / ${game.quota}`;
-    ui.detail.textContent=game.stage<=25?'敵彈可被主砲摧毀 · 保持火力':'26+ OVERDRIVE：敵彈耐久與密度上升';
+    if(game.hiddenBossActive){
+      ui.objective.textContent='HIDDEN BOSS';
+      ui.detail.textContent='PHANTOM THUNDER · 你的鏡像機體，性能略弱於本機';
+    }else{
+      ui.objective.textContent=`擊墜 ${Math.min(game.stageKills,game.quota)} / ${game.quota}`;
+      ui.detail.textContent=game.stage>=25
+        ? `SWARM + REAR ATTACK · 留意左右後方追擊機`
+        : game.stage>=20
+          ? `SWARM ZONE · 同時敵機上限 ${stageDifficulty().maxEnemies}`
+        : game.stage>=10
+          ? `敵軍增援中 · 同時敵機上限 ${stageDifficulty().maxEnemies}`
+          : '敵彈可被主砲摧毀 · 注意特殊武裝戰機';
+    }
   }else if(game.stageState==='bossWarning'){
     ui.objective.textContent='FORTRESS AHEAD';
     ui.detail.textContent='箭矢警告：大型基地即將進入戰區';
@@ -1764,7 +2503,11 @@ function updateUI(){
     }else{
       const rem=fortressOuterRemaining();
       ui.objective.textContent=`破壞弱點 ${4-rem} / 4`;
-      ui.detail.textContent='弱點位於基地最前緣 · 灰色裝甲完全無效';
+      ui.detail.textContent=game.stage>=20
+        ? 'TIER 3 基地 · HP×4 · 高速穿透彈 II · 追蹤飛彈'
+        : game.stage>=10
+          ? 'TIER 2 基地 · HP×2 · 火砲速度×2'
+          : '弱點位於基地最前緣 · 灰色裝甲完全無效';
     }
   }else{
     ui.objective.textContent='戰區轉移中';
@@ -2002,6 +2745,91 @@ function drawEnemy(e){
   if(elite){ctx.shadowColor='#ff8e62';ctx.shadowBlur=22;}
   ctx.rotate(Math.sin(e.age*2+e.seed)*.08);
 
+  if(e.type==='mirrorBoss'){
+    ctx.save();
+    // 和玩家同系輪廓，但改成紅銅色並朝下，形成真正鏡像。
+    ctx.rotate(Math.PI);
+    ctx.shadowColor='rgba(219,92,92,.35)';
+    ctx.shadowBlur=14;
+
+    const mg=ctx.createLinearGradient(-60,0,60,0);
+    mg.addColorStop(0,'#5b2936');
+    mg.addColorStop(.5,'#e7aa72');
+    mg.addColorStop(1,'#5b2936');
+    ctx.fillStyle=mg;
+    ctx.strokeStyle='#e59b8c';
+    ctx.lineWidth=3;
+
+    ctx.beginPath();
+    ctx.moveTo(0,-55);ctx.lineTo(23,-13);ctx.lineTo(69,20);ctx.lineTo(37,28);
+    ctx.lineTo(19,18);ctx.lineTo(13,55);ctx.lineTo(-13,55);ctx.lineTo(-19,18);
+    ctx.lineTo(-37,28);ctx.lineTo(-69,20);ctx.lineTo(-23,-13);ctx.closePath();
+    ctx.fill();ctx.stroke();
+
+    ctx.fillStyle='#f4d6b1';
+    ctx.beginPath();ctx.moveTo(0,-60);ctx.lineTo(14,12);ctx.lineTo(0,25);ctx.lineTo(-14,12);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#bd4653';
+    ctx.beginPath();ctx.ellipse(0,-12,7,20,0,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+
+    const hpPct=clamp(e.hp/e.maxHp,0,1);
+    ctx.fillStyle='rgba(0,0,0,.62)';ctx.fillRect(-76,68,152,10);
+    ctx.strokeStyle='rgba(255,255,255,.18)';ctx.strokeRect(-76,68,152,10);
+    ctx.fillStyle='#c95d66';ctx.fillRect(-74,70,148*hpPct,6);
+    ctx.restore();
+    return;
+  }
+
+  if(e.type==='scatter'||e.type==='piercer'){
+    const scatter=e.type==='scatter';
+    ctx.shadowColor=scatter?'rgba(188,116,220,.28)':'rgba(235,167,74,.28)';
+    ctx.shadowBlur=10;
+    ctx.fillStyle=scatter?'#65427b':'#765334';
+    ctx.strokeStyle=scatter?'#d6a8e5':'#e7bc75';
+    ctx.lineWidth=2.2;
+    ctx.beginPath();
+    ctx.moveTo(0,30);ctx.lineTo(17,8);ctx.lineTo(42,-2);ctx.lineTo(18,-16);
+    ctx.lineTo(0,-34);ctx.lineTo(-18,-16);ctx.lineTo(-42,-2);ctx.lineTo(-17,8);ctx.closePath();
+    ctx.fill();ctx.stroke();
+
+    ctx.fillStyle=scatter?'#e9a7ff':'#ffd28a';
+    ctx.beginPath();ctx.arc(0,-8,6,0,Math.PI*2);ctx.fill();
+
+    if(scatter){
+      ctx.strokeStyle='rgba(234,184,255,.72)';
+      ctx.beginPath();ctx.moveTo(-19,6);ctx.lineTo(-31,17);ctx.moveTo(19,6);ctx.lineTo(31,17);ctx.stroke();
+    }else{
+      ctx.fillStyle='#ffcc72';
+      ctx.fillRect(-4,8,8,24);
+    }
+
+    ctx.restore();
+    return;
+  }
+
+  if(e.type==='swarm'){
+    ctx.shadowColor='rgba(117,179,220,.22)';
+    ctx.shadowBlur=6;
+    ctx.fillStyle='#617d9b';
+    ctx.strokeStyle='#9fc2db';
+    ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.moveTo(0,22);
+    ctx.lineTo(9,4);
+    ctx.lineTo(29,-5);
+    ctx.lineTo(11,-10);
+    ctx.lineTo(0,-24);
+    ctx.lineTo(-11,-10);
+    ctx.lineTo(-29,-5);
+    ctx.lineTo(-9,4);
+    ctx.closePath();
+    ctx.fill();ctx.stroke();
+    ctx.fillStyle='#e17a72';
+    ctx.beginPath();ctx.arc(0,-5,4,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+    return;
+  }
+
   const g=ctx.createLinearGradient(-45,0,45,0);
   if(elite){g.addColorStop(0,'#6d2542');g.addColorStop(.5,'#ffb45a');g.addColorStop(1,'#6d2542');}
   else{g.addColorStop(0,'#253553');g.addColorStop(.5,'#d3e4f4');g.addColorStop(1,'#253553');}
@@ -2212,6 +3040,46 @@ function drawBoss(b){
 }
 
 function drawPlayerBullet(b){
+  if(b.missile){
+    ctx.save();
+    const ang=Math.atan2(b.vy,b.vx)+Math.PI/2;
+    ctx.translate(b.x,b.y);
+    ctx.rotate(ang);
+    ctx.globalCompositeOperation='source-over';
+
+    ctx.shadowColor=b.cruise?'rgba(255,186,90,.38)':'rgba(228,154,74,.30)';
+    ctx.shadowBlur=8;
+    ctx.fillStyle=b.cruise?'#d8b06c':'#c89a5c';
+    ctx.strokeStyle='#f3d39a';
+    ctx.lineWidth=1.5;
+
+    ctx.beginPath();
+    ctx.moveTo(0,-15);
+    ctx.lineTo(6,-3);
+    ctx.lineTo(5,10);
+    ctx.lineTo(0,15);
+    ctx.lineTo(-5,10);
+    ctx.lineTo(-6,-3);
+    ctx.closePath();
+    ctx.fill();ctx.stroke();
+
+    ctx.fillStyle='#d86155';
+    ctx.beginPath();
+    ctx.moveTo(-4,11);ctx.lineTo(0,22+Math.sin(game.time*20)*3);ctx.lineTo(4,11);ctx.closePath();
+    ctx.fill();
+
+    if(b.cruise){
+      ctx.strokeStyle='rgba(255,224,165,.65)';
+      ctx.beginPath();
+      ctx.moveTo(-5,2);ctx.lineTo(-12,8);
+      ctx.moveTo(5,2);ctx.lineTo(12,8);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+    return;
+  }
+
   if(b.subgun){
     ctx.save();
     ctx.globalCompositeOperation='source-over';
@@ -2257,10 +3125,54 @@ function drawPlayerBullet(b){
 }
 
 function drawEnemyBullet(b){
-  ctx.shadowColor=b.boss?'#ff5b85':'#ff945d';ctx.shadowBlur=15;
-  ctx.fillStyle=b.hp>1?'#fff0a8':(b.boss?'#ff5d88':'#ff9b61');
+  if(b.bossMissile){
+    ctx.save();
+    const ang=Math.atan2(b.vy,b.vx)+Math.PI/2;
+    ctx.translate(b.x,b.y);ctx.rotate(ang);
+    ctx.globalCompositeOperation='source-over';
+    ctx.shadowColor='rgba(230,92,72,.42)';
+    ctx.shadowBlur=10;
+
+    ctx.fillStyle='#9b4b46';
+    ctx.strokeStyle='#efad7d';
+    ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.moveTo(0,-18);ctx.lineTo(7,-4);ctx.lineTo(6,10);
+    ctx.lineTo(0,16);ctx.lineTo(-6,10);ctx.lineTo(-7,-4);
+    ctx.closePath();ctx.fill();ctx.stroke();
+
+    ctx.fillStyle='#ffcc7f';
+    ctx.beginPath();
+    ctx.moveTo(-4,11);ctx.lineTo(0,23+Math.sin(game.time*18)*2);ctx.lineTo(4,11);
+    ctx.closePath();ctx.fill();
+
+    ctx.restore();
+    return;
+  }
+
+  if(b.piercing){
+    ctx.save();
+    ctx.globalCompositeOperation='source-over';
+    const ang=Math.atan2(b.vy,b.vx)+Math.PI/2;
+    ctx.translate(b.x,b.y);ctx.rotate(ang);
+    ctx.shadowColor='rgba(226,161,71,.40)';ctx.shadowBlur=8;
+    ctx.fillStyle='#e4ad58';
+    ctx.beginPath();
+    ctx.moveTo(0,-16);ctx.lineTo(6,0);ctx.lineTo(0,16);ctx.lineTo(-6,0);ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle='#fff0ba';
+    ctx.fillRect(-2,-9,4,18);
+    ctx.restore();
+    return;
+  }
+
+  ctx.shadowColor=b.mirror?'#d76675':b.scatter?'#b877d0':(b.boss?'#ff5b85':'#ff945d');
+  ctx.shadowBlur=12;
+  ctx.fillStyle=b.mirror?'#d96b78':b.scatter?'#b986d1':(b.hp>1?'#fff0a8':(b.boss?'#ff5d88':'#ff9b61'));
   ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.8)';ctx.beginPath();ctx.arc(b.x-b.r*.22,b.y-b.r*.22,b.r*.28,0,Math.PI*2);ctx.fill();
+
+  ctx.fillStyle='rgba(255,255,255,.72)';
+  ctx.beginPath();ctx.arc(b.x-b.r*.22,b.y-b.r*.22,b.r*.27,0,Math.PI*2);ctx.fill();
 }
 
 function drawPickup(p){
